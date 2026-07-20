@@ -68,6 +68,26 @@ def get_settings_path():
         return os.path.join(os.path.dirname(__file__), "settings.json")
 
 
+def app_base_dir():
+    """开发目录或 PyInstaller 资源目录。"""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
+
+
+def asset_path(*parts):
+    return app_base_dir().joinpath("assets", *parts)
+
+
+def resolve_app_icon():
+    """优先使用 assets/shayu 头像，兼容打包后的路径。"""
+    for name in ("app_icon.png", "app.icns", "shayu.jpg", "favicon.ico"):
+        path = asset_path(name)
+        if path.exists():
+            return str(path)
+    return None
+
+
 def app_font(size, weight=QFont.Normal):
     """继承全局字体族，仅设置字号与字重。"""
     font = QFont()
@@ -107,8 +127,8 @@ class DownloadWorker(QThread):
     progress_updated = Signal(dict)
     download_finished = Signal(bool)
     
-    def __init__(self, downloader, m3u8_url, output_path, max_workers=10):
-        super().__init__()
+    def __init__(self, downloader, m3u8_url, output_path, max_workers=10, parent=None):
+        super().__init__(parent)
         self.downloader = downloader
         self.m3u8_url = m3u8_url
         self.output_path = output_path
@@ -117,20 +137,28 @@ class DownloadWorker(QThread):
     
     def run(self):
         """运行下载"""
+        success = False
         try:
+            if not self._is_running:
+                self.download_finished.emit(False)
+                return
             self.downloader.max_workers = self.max_workers
             success = self.downloader.download(
                 self.m3u8_url, 
                 self.output_path, 
                 self.progress_callback
             )
-            self.download_finished.emit(success)
         except Exception as e:
-            self.progress_updated.emit({
-                'status': 'error', 
-                'message': f'下载出错: {str(e)}'
-            })
-            self.download_finished.emit(False)
+            if self._is_running:
+                self.progress_updated.emit({
+                    'status': 'error', 
+                    'message': f'下载出错: {str(e)}'
+                })
+            success = False
+        finally:
+            # 线程结束前再发一次完成信号，避免对象提前销毁
+            if self._is_running:
+                self.download_finished.emit(success)
     
     def progress_callback(self, data):
         """进度回调"""
@@ -142,6 +170,11 @@ class DownloadWorker(QThread):
         self._is_running = False
         if hasattr(self.downloader, 'stop_download'):
             self.downloader.stop_download()
+
+    def requestInterruption(self):
+        """兼容 Qt 中断语义。"""
+        super().requestInterruption()
+        self.stop()
 
 
 class ModernButton(QPushButton):
@@ -425,6 +458,9 @@ class DownloadTaskWidget(QFrame):
     
     def start_download(self):
         """开始下载"""
+        # 若已有线程，先安全停掉，避免旧 QThread 被覆盖后崩溃
+        self.shutdown_worker(wait_ms=3000)
+
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.delete_btn.setEnabled(False)  # 下载时禁用删除
@@ -439,18 +475,52 @@ class DownloadTaskWidget(QFrame):
         if main_window and hasattr(main_window, 'threads_spin'):
             max_workers = main_window.threads_spin.value()
         
-        # 创建下载器和工作线程
+        # 创建下载器和工作线程（父对象绑定到任务卡片，随卡片生命周期管理）
         downloader = M3U8Downloader(custom_headers=self.custom_headers)
-        self.worker = DownloadWorker(downloader, self.url, self.output_path, max_workers=max_workers)
+        self.worker = DownloadWorker(
+            downloader,
+            self.url,
+            self.output_path,
+            max_workers=max_workers,
+            parent=self,
+        )
         self.worker.progress_updated.connect(self.update_progress)
         self.worker.download_finished.connect(self.on_download_finished)
+        self.worker.finished.connect(self._on_worker_thread_finished)
         self.worker.start()
+
+    def _on_worker_thread_finished(self):
+        """QThread 真正结束后再放开删除按钮，避免半销毁状态。"""
+        if self.worker is not None and not self.worker.isRunning():
+            self.delete_btn.setEnabled(True)
+
+    def shutdown_worker(self, wait_ms=5000):
+        """安全停止并等待下载线程，防止 QThread 被提前销毁导致进程崩溃。"""
+        worker = self.worker
+        if worker is None:
+            return
+
+        try:
+            worker.progress_updated.disconnect(self.update_progress)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            worker.download_finished.disconnect(self.on_download_finished)
+        except (RuntimeError, TypeError):
+            pass
+
+        if worker.isRunning():
+            worker.stop()
+            if not worker.wait(wait_ms):
+                # 仍卡在网络 IO 时强制终止，避免退出阶段无限挂起
+                worker.terminate()
+                worker.wait(2000)
+
+        self.worker = None
     
     def stop_download(self):
         """停止下载"""
-        if self.worker:
-            self.worker.stop()
-            self.worker.wait()
+        self.shutdown_worker(wait_ms=8000)
 
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
@@ -461,26 +531,38 @@ class DownloadTaskWidget(QFrame):
 
     def update_progress(self, data):
         """更新进度"""
-        if 'progress' in data:
-            self.progress_bar.setValue(int(data['progress']))
-            speed = data.get('speed', 0)
-            eta = data.get('eta', 0)
-            progress_percent = int(data['progress'])
+        main_window = self._find_main_window()
+        if main_window is not None and getattr(main_window, "is_closing", False):
+            return
+        try:
+            if 'progress' in data:
+                self.progress_bar.setValue(int(data['progress']))
+                speed = data.get('speed', 0)
+                eta = data.get('eta', 0)
+                progress_percent = int(data['progress'])
 
-            self.status_label.setText(
-                f"{progress_percent}% · {data['completed']}/{data['total']} · {speed:.1f}/s · {eta:.0f}s"
-            )
-            self._set_status_accent(UI_TOKENS['primary'])
-        elif 'message' in data:
-            if data.get('status') == 'error':
-                self.status_label.setText(f"错误：{data['message']}")
-                self._set_status_accent(UI_TOKENS['danger'])
-            else:
-                self.status_label.setText(data['message'])
+                self.status_label.setText(
+                    f"{progress_percent}% · {data['completed']}/{data['total']} · {speed:.1f}/s · {eta:.0f}s"
+                )
                 self._set_status_accent(UI_TOKENS['primary'])
+            elif 'message' in data:
+                if data.get('status') == 'error':
+                    self.status_label.setText(f"错误：{data['message']}")
+                    self._set_status_accent(UI_TOKENS['danger'])
+                else:
+                    self.status_label.setText(data['message'])
+                    self._set_status_accent(UI_TOKENS['primary'])
+        except RuntimeError:
+            # 控件已被销毁
+            return
 
     def on_download_finished(self, success):
         """下载完成回调"""
+        main_window = self._find_main_window()
+        if main_window is not None and getattr(main_window, "is_closing", False):
+            # 退出过程中不再弹窗/改 UI，避免半销毁对象回调崩溃
+            return
+
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.delete_btn.setEnabled(True)
@@ -496,7 +578,6 @@ class DownloadTaskWidget(QFrame):
                 border_color=UI_TOKENS['success'],
             )
 
-            main_window = self._find_main_window()
             if main_window:
                 CustomMessageBox.show_success(
                     main_window,
@@ -511,7 +592,6 @@ class DownloadTaskWidget(QFrame):
                 border_color=UI_TOKENS['danger'],
             )
 
-            main_window = self._find_main_window()
             if main_window:
                 CustomMessageBox.show_error(
                     main_window,
@@ -528,10 +608,8 @@ class DownloadTaskWidget(QFrame):
     
     def delete_task(self):
         """删除任务"""
-        # 停止下载（如果正在进行）
-        if self.worker and self.worker.isRunning():
-            self.worker.stop()
-            self.worker.wait()
+        # 先停线程，再确认删除，避免确认期间线程结束回调碰已删对象
+        self.shutdown_worker(wait_ms=8000)
         
         # 确认删除
         main_window = self._find_main_window()
@@ -3491,8 +3569,8 @@ class MainWindow(QMainWindow):
         self.resize(1100, 800)
 
         try:
-            icon_path = os.path.join(os.path.dirname(__file__), "assets", "favicon.ico")
-            if os.path.exists(icon_path):
+            icon_path = resolve_app_icon()
+            if icon_path:
                 self.setWindowIcon(QIcon(icon_path))
         except Exception as e:
             print(f"设置窗口图标失败: {e}")
@@ -4364,8 +4442,8 @@ class MainWindow(QMainWindow):
         
         # 设置托盘图标
         try:
-            icon_path = os.path.join(os.path.dirname(__file__), "assets", "favicon.ico")
-            if os.path.exists(icon_path):
+            icon_path = resolve_app_icon()
+            if icon_path:
                 self.tray_icon.setIcon(QIcon(icon_path))
             else:
                 # 如果没有图标文件，使用窗口图标
@@ -4532,14 +4610,26 @@ class MainWindow(QMainWindow):
     def quit_application(self):
         """退出应用程序"""
         self.is_closing = True
+        self._shutdown_all_download_workers()
         self._uninstall_main_log_capture()
-        self.tray_icon.hide()
+        if hasattr(self, "tray_icon") and self.tray_icon is not None:
+            self.tray_icon.hide()
         QApplication.quit()
+
+    def _shutdown_all_download_workers(self):
+        """退出前停掉所有下载 QThread，避免进程崩溃。"""
+        for task in list(getattr(self, "download_tasks", []) or []):
+            try:
+                if hasattr(task, "shutdown_worker"):
+                    task.shutdown_worker(wait_ms=5000)
+            except Exception as exc:
+                print(f"停止下载任务失败: {exc}")
     
     def closeEvent(self, event):
         """窗口关闭事件"""
         if self.is_closing:
             # 如果是真正退出，接受关闭事件
+            self._shutdown_all_download_workers()
             self._uninstall_main_log_capture()
             event.accept()
             return
@@ -5477,8 +5567,8 @@ def main():
     
     # 设置应用图标
     try:
-        icon_path = os.path.join(os.path.dirname(__file__), "assets", "favicon.ico")
-        if os.path.exists(icon_path):
+        icon_path = resolve_app_icon()
+        if icon_path:
             app.setWindowIcon(QIcon(icon_path))
     except Exception as e:
         print(f"设置应用图标失败: {e}")

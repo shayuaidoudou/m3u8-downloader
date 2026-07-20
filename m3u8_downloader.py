@@ -25,6 +25,43 @@ import urllib3
 # 禁用SSL警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+DEFAULT_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/150.0.0.0 Safari/537.36"
+)
+
+DEFAULT_REQUEST_HEADERS = {
+    "User-Agent": DEFAULT_BROWSER_UA,
+    "Accept": "*/*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+}
+
+
+def merge_headers(base: Dict[str, str] = None, custom: Dict[str, str] = None) -> Dict[str, str]:
+    """合并请求头：按不区分大小写覆盖，避免同时出现 User-Agent / user-agent。"""
+    merged: Dict[str, str] = {}
+    key_map: Dict[str, str] = {}  # lower -> canonical key currently in merged
+
+    def _apply(source: Dict[str, str]):
+        for raw_key, value in (source or {}).items():
+            if value is None:
+                continue
+            key = str(raw_key).strip()
+            if not key:
+                continue
+            lower = key.lower()
+            if lower in key_map:
+                del merged[key_map[lower]]
+            key_map[lower] = key
+            merged[key] = str(value)
+
+    _apply(base or {})
+    _apply(custom or {})
+    return merged
+
 
 class FFmpegMerger:
     """FFmpeg视频合并工具"""
@@ -152,11 +189,10 @@ class AESDecryptor:
     
     def __init__(self, custom_headers: Dict[str, str] = None):
         self.key_cache: Dict[str, bytes] = {}
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
-        }
-        if custom_headers:
-            self.headers.update(custom_headers)
+        self.headers = merge_headers(
+            {"User-Agent": DEFAULT_BROWSER_UA},
+            custom_headers,
+        )
     
     def get_key(self, key_uri: str, headers: Dict[str, str] = None) -> bytes:
         """获取AES密钥"""
@@ -206,17 +242,10 @@ class M3U8Parser:
     
     def __init__(self, custom_headers: Dict[str, str] = None):
         self.base_url = ""
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-        }
-        # 如果提供了自定义请求头，则合并
+        self.headers = merge_headers(DEFAULT_REQUEST_HEADERS, custom_headers)
         if custom_headers:
-            self.headers.update(custom_headers)
             print(f"[DEBUG] 使用自定义请求头: {custom_headers}")
+            print(f"[DEBUG] 合并后请求头: {self.headers}")
     
     def parse_m3u8(self, url: str) -> Dict[str, Any]:
         """解析M3U8文件"""
@@ -340,6 +369,19 @@ class M3U8Parser:
                 print(f"[ERROR] M3U8失败状态码: {response.status_code}")
                 print(f"[ERROR] M3U8失败响应头: {dict(response.headers)}")
                 print(f"[ERROR] M3U8失败响应预览: {response.text[:500]}")
+                body = (response.text or "").lower()
+                header_blob = " ".join(f"{k}:{v}" for k, v in response.headers.items()).lower()
+                if response.status_code == 403 and (
+                    "cloudflare" in body
+                    or "attention required" in body
+                    or "cf-ray" in header_blob
+                    or "cloudflare" in header_blob
+                ):
+                    raise Exception(
+                        "CDN 返回 Cloudflare 403，链接可能已过期或请求头/Cookie 不被接受。"
+                        "请重新提取 M3U8，确认 Referer/Origin/User-Agent 与播放页一致，"
+                        "并避免同时开太多并发任务。"
+                    ) from e
             raise Exception(f"网络请求失败: {e}")
         except Exception as e:
             print(f"[ERROR] M3U8解析异常: {str(e)}")
@@ -417,22 +459,15 @@ class M3U8Downloader:
         self.decryptor = AESDecryptor(custom_headers)
         self.ffmpeg_merger = FFmpegMerger()  # 初始化FFmpeg合并器
         self.session = requests.Session()
-        
-        # 设置默认请求头
-        default_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-        }
-        
-        # 合并自定义请求头
+
+        # 合并自定义请求头（大小写不敏感，避免重复 UA）
+        merged_headers = merge_headers(DEFAULT_REQUEST_HEADERS, custom_headers)
         if custom_headers:
-            default_headers.update(custom_headers)
             print(f"[DEBUG] 下载器使用自定义请求头: {custom_headers}")
-        
-        self.session.headers.update(default_headers)
+            print(f"[DEBUG] 下载器合并后请求头: {merged_headers}")
+
+        self.session.headers.clear()
+        self.session.headers.update(merged_headers)
         self._stop_flag = threading.Event()
     
     def download(self, m3u8_url: str, output_path: str, progress_callback: Callable = None) -> bool:
@@ -517,21 +552,19 @@ class M3U8Downloader:
     def _download_segments(self, segments: List[Dict], temp_dir: str, encryption: Dict = None, progress: ProgressCallback = None) -> List[str]:
         """多线程下载片段"""
         downloaded_files = [''] * len(segments)
-        
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # 提交所有下载任务
-            future_to_index = {}
+        executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        future_to_index = {}
+        try:
             for i, segment in enumerate(segments):
                 if self._stop_flag.is_set():
                     break
                 future = executor.submit(self._download_segment, segment, temp_dir, encryption)
                 future_to_index[future] = i
-            
-            # 处理下载结果
+
             for future in as_completed(future_to_index):
                 if self._stop_flag.is_set():
                     break
-                    
+
                 index = future_to_index[future]
                 try:
                     file_path = future.result()
@@ -546,7 +579,14 @@ class M3U8Downloader:
                     print(f"[ERROR] 片段任务 {index} 执行异常: {type(e).__name__}: {e}")
                     if progress:
                         progress.update_progress(False)
-        
+        finally:
+            # 停止时取消未开始任务并尽快返回，避免退出阶段卡在线程池
+            stopped = self._stop_flag.is_set()
+            for pending in future_to_index:
+                if not pending.done():
+                    pending.cancel()
+            executor.shutdown(wait=not stopped, cancel_futures=True)
+
         return [f for f in downloaded_files if f]
     
     def _download_segment(self, segment: Dict, temp_dir: str, encryption: Dict = None) -> Optional[str]:
