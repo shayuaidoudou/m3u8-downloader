@@ -942,7 +942,7 @@ class IYFSearcher:
             extracted[result_key] = m3u8_url
             with self._result_lock:
                 self._m3u8_urls[result_key] = m3u8_url
-            print(f"   ✓ {ep_name}: {m3u8_url[:80]}...")
+            print(f"    {ep_name}: {m3u8_url[:80]}...")
         return extracted
 
     def clear_results(self):

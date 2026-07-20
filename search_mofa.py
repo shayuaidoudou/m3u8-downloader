@@ -40,12 +40,12 @@ def retry_on_failure(max_retries: int = 3, delay: float = 2.0, backoff: float = 
                         error_type = "SSL Error"
 
                     if retries < max_retries:
-                        print(f"⚠️  请求失败 ({error_type}): {error_msg[:100]}...")
+                        print(f"️  请求失败 ({error_type}): {error_msg[:100]}...")
                         print(f"   第 {retries}/{max_retries} 次重试，等待 {current_delay} 秒...")
                         time.sleep(current_delay)
                         current_delay *= backoff
                     else:
-                        print(f"❌ 达到最大重试次数 ({max_retries})，请求失败")
+                        print(f" 达到最大重试次数 ({max_retries})，请求失败")
                         print(f"   最后错误: {error_msg[:200]}")
                         raise
 
@@ -79,7 +79,7 @@ class MofaSearcher:
                 'http': proxy_url,
                 'https': proxy_url
             }
-            print(f"✓ 已配置代理: {proxy_url}")
+            print(f" 已配置代理: {proxy_url}")
     
     def _init_headers(self) -> dict:
         """初始化请求头"""
@@ -131,7 +131,7 @@ class MofaSearcher:
             result = response.json()
             
             if not result.get('success'):
-                print(f"❌ 搜索失败: {result.get('message', '未知错误')}")
+                print(f" 搜索失败: {result.get('message', '未知错误')}")
                 return []
             
             data = result.get('data', [])
@@ -160,7 +160,7 @@ class MofaSearcher:
                 results.append(result_data)
 
             if verbose:
-                print(f"✓ 搜索到 {len(results)} 个结果\n")
+                print(f" 搜索到 {len(results)} 个结果\n")
 
             return results
 

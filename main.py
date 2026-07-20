@@ -684,10 +684,10 @@ class CustomMessageBox(QDialog):
 
         icons = {
             self.INFO: "ℹ",
-            self.WARNING: "⚠",
+            self.WARNING: "",
             self.QUESTION: "？",
-            self.SUCCESS: "✓",
-            self.ERROR: "✕"
+            self.SUCCESS: "",
+            self.ERROR: ""
         }
 
         icon_label = QLabel(icons.get(self.msg_type, "ℹ"))
@@ -1739,8 +1739,8 @@ class SettingsDialog(QDialog):
         except Exception as e:
             CustomMessageBox.show_error(
                 self,
-                "保存失败 😭",
-                f"保存设置时出现错误：\n{str(e)}\n\n💭 请检查文件权限或磁盘空间。"
+                "保存失败",
+                f"保存设置时出现错误：\n{str(e)}\n\n请检查文件权限或磁盘空间。"
             )
     
     def apply_settings_to_main_window(self, settings):
@@ -1864,7 +1864,7 @@ class SettingsDialog(QDialog):
                 break
 
         for btn in self.findChildren(QPushButton):
-            if btn.text() == "✕":
+            if btn.text() == "":
                 btn.setStyleSheet(f"""
                     QPushButton {{
                         background: transparent;
@@ -2594,7 +2594,7 @@ class M3u8SearchDialog(QDialog):
         self.search_results = []
         self.m3u8_results = {}
         self.results_text.clear()
-        self.update_status(f"🔄 切换到{engine_type}，等待搜索...")
+        self.update_status(f" 切换到{engine_type}，等待搜索...")
         self.extract_selected_btn.setEnabled(False)
         self.extract_all_btn.setEnabled(False)
         self.copy_btn.setEnabled(False)
@@ -2746,7 +2746,7 @@ class M3u8SearchDialog(QDialog):
     def start_search(self):
         """开始搜索"""
         keyword = self.keyword_input.text().strip()
-        print(f"🔍 开始搜索，关键词: '{keyword}'")
+        print(f" 开始搜索，关键词: '{keyword}'")
         
         if not keyword:
             CustomMessageBox.show_error(self, "错误", "请输入搜索关键词!")
@@ -2775,7 +2775,7 @@ class M3u8SearchDialog(QDialog):
         
         # 禁用搜索按钮
         self.search_btn.setEnabled(False)
-        self.update_status(f"🔍 正在搜索: {keyword}...")
+        self.update_status(f" 正在搜索: {keyword}...")
         
         # 获取搜索类型（仅爱瓜影视需要）
         choice = self.type_combo.currentIndex()  # 0=电影, 1=电视剧等
@@ -2815,9 +2815,9 @@ class M3u8SearchDialog(QDialog):
             print(f"正在设置结果文本...")
             
             # 显示结果
-            result_text = f"🎯 搜索关键词: {keyword}\n"
-            result_text += f"🔎 搜索引擎: {engine_type}\n"
-            result_text += f"📊 共找到 {len(results)} 个结果:\n\n"
+            result_text = f" 搜索关键词: {keyword}\n"
+            result_text += f" 搜索引擎: {engine_type}\n"
+            result_text += f" 共找到 {len(results)} 个结果:\n\n"
             
             if engine_type == "爱瓜影视":
                 # 爱瓜影视返回 [url, url, ...]
@@ -2830,11 +2830,11 @@ class M3u8SearchDialog(QDialog):
                         result_text += f"{'='*60}\n"
                         result_text += f"[{i}] {item.get('title', '未知')}\n"
                         result_text += f"{'='*60}\n"
-                        result_text += f"🎬 分类：{item.get('category', '未知')}"
-                        result_text += f"  |  📅 年份：{item.get('year', '未知')}"
-                        result_text += f"  |  🌏 地区：{item.get('region', '未知')}\n"
+                        result_text += f" 分类：{item.get('category', '未知')}"
+                        result_text += f"  |   年份：{item.get('year', '未知')}"
+                        result_text += f"  |   地区：{item.get('region', '未知')}\n"
                         if item.get('genre'):
-                            result_text += f"🎭 类型：{item.get('genre')}\n"
+                            result_text += f" 类型：{item.get('genre')}\n"
                         if item.get('actors'):
                             actors = item.get('actors', '')
                             # 如果演员信息太长，截断显示
@@ -2861,24 +2861,24 @@ class M3u8SearchDialog(QDialog):
                         result_text += f"{'='*60}\n"
                         result_text += f"[{i}] {item.get('title', '未知')}\n"
                         result_text += f"{'='*60}\n"
-                        result_text += f"🎬 分类：{item.get('category', '未知')}"
-                        result_text += f"  |  📅 年份：{item.get('year', '未知')}"
-                        result_text += f"  |  🌏 地区：{item.get('region', '未知')}\n"
+                        result_text += f" 分类：{item.get('category', '未知')}"
+                        result_text += f"  |   年份：{item.get('year', '未知')}"
+                        result_text += f"  |   地区：{item.get('region', '未知')}\n"
                         if item.get('genre'):
-                            result_text += f"🎭 类型：{item.get('genre')}\n"
+                            result_text += f" 类型：{item.get('genre')}\n"
                         if item.get('remarks'):
-                            result_text += f"📌 备注：{item.get('remarks')}\n"
+                            result_text += f" 备注：{item.get('remarks')}\n"
                         if item.get('score'):
                             result_text += f"评分：{item.get('score')}\n"
                         if item.get('actors'):
                             actors = item.get('actors', '')
                             if len(actors) > 80:
-                                result_text += f"👥 演员：{actors[:80]}...\n"
+                                result_text += f" 演员：{actors[:80]}...\n"
                             else:
-                                result_text += f"👥 演员：{actors}\n"
+                                result_text += f" 演员：{actors}\n"
                         if item.get('total'):
-                            result_text += f"📊 总集数：{item.get('total')}集\n"
-                        result_text += f"🎬 播放源：{item.get('play_from', '默认')}\n"
+                            result_text += f" 总集数：{item.get('total')}集\n"
+                        result_text += f" 播放源：{item.get('play_from', '默认')}\n"
                         result_text += f"\n"
                     else:
                         result_text += f"{i}: {item}\n"
@@ -2890,18 +2890,18 @@ class M3u8SearchDialog(QDialog):
                     result_text += f"{'='*60}\n"
                     result_text += f"[{i}] {item.get('title', '未知')}\n"
                     result_text += f"{'='*60}\n"
-                    result_text += f"🎬 分类：{item.get('category', '未知')}"
-                    result_text += f"  |  📅 年份：{item.get('year', '未知')}"
-                    result_text += f"  |  🌏 地区：{item.get('region', '未知')}\n"
+                    result_text += f" 分类：{item.get('category', '未知')}"
+                    result_text += f"  |   年份：{item.get('year', '未知')}"
+                    result_text += f"  |   地区：{item.get('region', '未知')}\n"
                     if item.get('genre'):
-                        result_text += f"🎭 类型：{item.get('genre')}\n"
+                        result_text += f" 类型：{item.get('genre')}\n"
                     if item.get('score'):
                         result_text += f"评分：{item.get('score')}\n"
                     if item.get('actors'):
-                        result_text += f"👥 演员：{item.get('actors')}\n"
+                        result_text += f" 演员：{item.get('actors')}\n"
                     if item.get('director'):
-                        result_text += f"🎥 导演：{item.get('director')}\n"
-                    result_text += f"📊 剧集：{item.get('total', 0)} 集"
+                        result_text += f" 导演：{item.get('director')}\n"
+                    result_text += f" 剧集：{item.get('total', 0)} 集"
                     if item.get('remarks'):
                         result_text += f"  |  更新至：{item.get('remarks')}"
                     result_text += "\n\n"
@@ -3302,7 +3302,7 @@ class M3u8SearchDialog(QDialog):
                     for ep_name, ep_url in episodes:
                         key = f"{title}_{selected_route}_{ep_name}"
                         all_results[key] = ep_url
-                        print(f"   ✓ {ep_name}: {ep_url[:60]}...")
+                        print(f"    {ep_name}: {ep_url[:60]}...")
 
                     print(f"完成提取: {title} - 共 {len(episodes)} 集")
 
@@ -3405,7 +3405,7 @@ class M3u8SearchDialog(QDialog):
             # 显示结果
             result_text = self.results_text.toPlainText() + "\n\n"
             result_text += "=" * 50 + "\n"
-            result_text += f"🎬 M3U8提取结果 ({len(results)}个):\n"
+            result_text += f" M3U8提取结果 ({len(results)}个):\n"
             result_text += "=" * 50 + "\n\n"
             
             for i, (chapter_id, m3u8_url) in enumerate(results.items(), 1):
@@ -3433,7 +3433,7 @@ class M3u8SearchDialog(QDialog):
         clipboard = QApplication.clipboard()
         clipboard.setText(clipboard_text)
         
-        self.update_status(f"📋 已复制 {len(m3u8_urls)} 个M3U8链接到剪贴板")
+        self.update_status(f" 已复制 {len(m3u8_urls)} 个M3U8链接到剪贴板")
     
     def clear_results(self):
         """清空结果"""
@@ -5153,7 +5153,7 @@ github.com/shayuaidoudou/m3u8-anime-downloader"""
                 print(f"已加载用户设置: 线程数={default_threads}, 路径={default_path}, 主题={theme_index}")
                 
         except Exception as e:
-            print(f"⚠️ 加载用户设置失败: {e}")
+            print(f"️ 加载用户设置失败: {e}")
             # 继续使用默认设置
     
     def _on_task_finished(self, success):
