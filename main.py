@@ -1633,7 +1633,7 @@ class SettingsDialog(QDialog):
         reply = CustomMessageBox.show_question(
             self,
             "清理缓存",
-            "确定要清理所有缓存文件吗？\n\n💭 这将删除临时文件和下载缓存，\n可以释放磁盘空间但可能影响下载速度。"
+            "确定要清理所有缓存文件吗？\n\n这将删除临时文件和下载缓存，可释放磁盘空间，但可能影响后续下载速度。"
         )
         
         if reply == QDialog.Accepted:
