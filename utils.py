@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-M3U8下载器工具函数
+M3U8 下载器工具函数
 """
 
 import os

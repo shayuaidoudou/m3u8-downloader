@@ -401,7 +401,7 @@ class IYFSearcher:
             page = ChromiumPage(addr_or_opts=self._build_chromium_options())
             try:
                 logger.info("爱壹帆 Cloudflare：DrissionPage 打开 %s", target_url)
-                print(f"🛡️ Cloudflare 验证中，正在打开: {target_url}")
+                print(f"Cloudflare 验证中，正在打开: {target_url}")
                 page.get(target_url)
                 self._wait_page_fully_loaded(page, timeout=min(25, timeout))
 
@@ -440,13 +440,13 @@ class IYFSearcher:
                             "爱壹帆 Cloudflare 已通过（URL 已离开 challenge）: %s",
                             current_url,
                         )
-                        print(f"✅ Cloudflare 验证已通过: {current_url}")
+                        print(f"Cloudflare 验证已通过: {current_url}")
                         return self.public_key, self.private_key
 
                     if on_challenge and ready and widget_ready:
                         if not widget_ready_at:
                             widget_ready_at = time.time()
-                            print("☑️ 挑战页验证框已就绪，稍等后勾选...")
+                            print("挑战页验证框已就绪，稍等后勾选...")
                             logger.info("爱壹帆 Cloudflare：外层挑战 UI / Turnstile 已就绪")
                         # 页面/控件就绪后每 0.5s 发送一次 Tab+Space。
                         if time.time() - last_challenge_click >= 0.5:
@@ -456,12 +456,12 @@ class IYFSearcher:
                                 "爱壹帆 Cloudflare：发送 Tab + Space (%s)",
                                 current_url[:100],
                             )
-                            print("🖱️ 已发送 Tab + Space，等待跳转离开挑战页...")
+                            print("已发送 Tab + Space，等待跳转离开挑战页...")
                     elif on_challenge and ready and not widget_ready:
                         now = time.time()
                         if now - last_wait_log >= 3.0:
                             last_wait_log = now
-                            print("⏳ 挑战页已加载，等待 Turnstile 挂载...")
+                            print("挑战页已加载，等待 Turnstile 挂载...")
 
                     time.sleep(0.15)
 
@@ -871,7 +871,7 @@ class IYFSearcher:
                         exc,
                     )
                     print(
-                        f"⏳ 请求超时/网络异常，{wait_seconds:.1f}s 后重试 "
+                        f"请求超时/网络异常，{wait_seconds:.1f}s 后重试 "
                         f"({attempt + 1}/{max_attempts})..."
                     )
                     time.sleep(wait_seconds)
@@ -886,7 +886,7 @@ class IYFSearcher:
                     exc,
                 )
                 print(
-                    f"🛡️ 访问过量，正在打开挑战页过验证后重试 "
+                    f"访问过量，正在打开挑战页过验证后重试 "
                     f"({attempt + 1}/{max_attempts}): {challenge_url}"
                 )
                 try:
@@ -897,7 +897,7 @@ class IYFSearcher:
                         wait_seconds,
                         bypass_exc,
                     )
-                    print(f"⏳ 过盾失败，等待 {wait_seconds:.1f}s 后重试...")
+                    print(f"过盾失败，等待 {wait_seconds:.1f}s 后重试...")
                     time.sleep(wait_seconds)
                     continue
                 # 过盾成功后稍等再请求，降低立刻再次限流概率。

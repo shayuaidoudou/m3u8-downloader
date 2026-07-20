@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-M3U8 高速下载器核心模块
+M3U8 下载器核心模块
 支持多线程、异步下载和AES解密
 """
 
@@ -406,7 +406,7 @@ class ProgressCallback:
 
 
 class M3U8Downloader:
-    """M3U8高速下载器"""
+    """M3U8 下载器"""
 
     def __init__(self, max_workers: int = 10, max_retries: int = 3, custom_headers: Dict[str, str] = None):
         self.max_workers = max_workers

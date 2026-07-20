@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-M3U8高速下载器 - 主程序
+M3U8 下载器 - 主程序
 现代化的PySide6 GUI界面
 """
 
@@ -1641,7 +1641,7 @@ class SettingsDialog(QDialog):
             CustomMessageBox.show_success(
                 self,
                 "清理完成",
-                "缓存文件已成功清理！\n\n🎉 释放了 45.2 MB 磁盘空间~"
+                "缓存文件已清理。"
             )
     
     def load_settings(self):
@@ -1764,7 +1764,7 @@ class SettingsDialog(QDialog):
         
         # 更新状态栏
         if hasattr(self.main_window, 'status_bar'):
-            self.main_window.status_bar.showMessage("✅ 设置已更新并应用")
+            self.main_window.status_bar.showMessage("设置已更新并应用")
     
     def reset_to_default(self):
         """恢复默认设置"""
@@ -2218,22 +2218,22 @@ class RouteSelectionDialog(QDialog):
     def accept(self):
         """确认选择"""
         selected_row = self.route_list.currentRow()
-        print(f"📺 线路选择对话框 - 当前选中行: {selected_row}")
+        print(f"线路选择对话框 - 当前选中行: {selected_row}")
         
         if selected_row >= 0:
             route_keys = list(self.routes_data.keys())
             print(f"   可用线路: {route_keys}")
             self.selected_route = route_keys[selected_row]
-            print(f"   ✅ 确认选择线路: {self.selected_route}")
+            print(f"确认选择线路: {self.selected_route}")
         else:
-            print(f"   ❌ 未选择任何线路")
+            print("未选择任何线路")
             self.selected_route = None
         
         super().accept()
     
     def get_selected_route(self):
         """获取选中的线路"""
-        print(f"📺 返回选中的线路: {self.selected_route}")
+        print(f"返回选中的线路: {self.selected_route}")
         return self.selected_route
 
 
@@ -2558,12 +2558,12 @@ class M3u8SearchDialog(QDialog):
                 ncat_cookie=self.ncat_cookie_input.text().strip(),
                 iyf_cookie=self.ncat_cookie_input.text().strip(),
             )
-            self.update_status(f"✅ {engine_type}搜索引擎初始化完成")
+            self.update_status(f"{engine_type} 搜索引擎初始化完成")
         except Exception as e:
-            print(f"❌ 搜索引擎初始化失败: {e}")
+            print(f"搜索引擎初始化失败: {e}")
             import traceback
             traceback.print_exc()
-            self.update_status(f"❌ 搜索引擎初始化失败: {e}")
+            self.update_status(f"搜索引擎初始化失败: {e}")
     
     def update_type_visibility(self):
         """根据搜索引擎类型更新UI组件的可见性"""
@@ -2811,7 +2811,7 @@ class M3u8SearchDialog(QDialog):
         
         if results:
             engine_type = self.engine_combo.currentText()
-            self.update_status(f"✅ 找到 {len(results)} 个结果")
+            self.update_status(f"找到 {len(results)} 个结果")
             print(f"正在设置结果文本...")
             
             # 显示结果
@@ -2828,7 +2828,7 @@ class M3u8SearchDialog(QDialog):
                 for i, item in enumerate(results):
                     if isinstance(item, dict):
                         result_text += f"{'='*60}\n"
-                        result_text += f"📺 [{i}] {item.get('title', '未知')}\n"
+                        result_text += f"[{i}] {item.get('title', '未知')}\n"
                         result_text += f"{'='*60}\n"
                         result_text += f"🎬 分类：{item.get('category', '未知')}"
                         result_text += f"  |  📅 年份：{item.get('year', '未知')}"
@@ -2839,17 +2839,17 @@ class M3u8SearchDialog(QDialog):
                             actors = item.get('actors', '')
                             # 如果演员信息太长，截断显示
                             if len(actors) > 80:
-                                result_text += f"⭐ 演员：{actors[:80]}...\n"
+                                result_text += f"演员：{actors[:80]}...\n"
                             else:
-                                result_text += f"⭐ 演员：{actors}\n"
+                                result_text += f"演员：{actors}\n"
                         if item.get('description'):
                             desc = item.get('description', '')
                             # 简介截断显示
                             if len(desc) > 100:
-                                result_text += f"📝 简介：{desc[:100]}...\n"
+                                result_text += f"简介：{desc[:100]}...\n"
                             else:
-                                result_text += f"📝 简介：{desc}\n"
-                        result_text += f"🔗 链接：{item.get('detail_url', '')}\n"
+                                result_text += f"简介：{desc}\n"
+                        result_text += f"链接：{item.get('detail_url', '')}\n"
                         result_text += f"\n"
                     else:
                         # 兼容性处理
@@ -2859,7 +2859,7 @@ class M3u8SearchDialog(QDialog):
                 for i, item in enumerate(results):
                     if isinstance(item, dict):
                         result_text += f"{'='*60}\n"
-                        result_text += f"📺 [{i}] {item.get('title', '未知')}\n"
+                        result_text += f"[{i}] {item.get('title', '未知')}\n"
                         result_text += f"{'='*60}\n"
                         result_text += f"🎬 分类：{item.get('category', '未知')}"
                         result_text += f"  |  📅 年份：{item.get('year', '未知')}"
@@ -2869,7 +2869,7 @@ class M3u8SearchDialog(QDialog):
                         if item.get('remarks'):
                             result_text += f"📌 备注：{item.get('remarks')}\n"
                         if item.get('score'):
-                            result_text += f"⭐ 评分：{item.get('score')}\n"
+                            result_text += f"评分：{item.get('score')}\n"
                         if item.get('actors'):
                             actors = item.get('actors', '')
                             if len(actors) > 80:
@@ -2888,7 +2888,7 @@ class M3u8SearchDialog(QDialog):
                         result_text += f"{i}: {item}\n"
                         continue
                     result_text += f"{'='*60}\n"
-                    result_text += f"📺 [{i}] {item.get('title', '未知')}\n"
+                    result_text += f"[{i}] {item.get('title', '未知')}\n"
                     result_text += f"{'='*60}\n"
                     result_text += f"🎬 分类：{item.get('category', '未知')}"
                     result_text += f"  |  📅 年份：{item.get('year', '未知')}"
@@ -2896,7 +2896,7 @@ class M3u8SearchDialog(QDialog):
                     if item.get('genre'):
                         result_text += f"🎭 类型：{item.get('genre')}\n"
                     if item.get('score'):
-                        result_text += f"⭐ 评分：{item.get('score')}\n"
+                        result_text += f"评分：{item.get('score')}\n"
                     if item.get('actors'):
                         result_text += f"👥 演员：{item.get('actors')}\n"
                     if item.get('director'):
@@ -2921,7 +2921,7 @@ class M3u8SearchDialog(QDialog):
             print(f"已启用提取按钮")
             
         else:
-            self.update_status("❌ 未找到相关结果")
+            self.update_status("未找到相关结果")
             self.results_text.setText(f"未找到与 '{keyword}' 相关的结果")
             print("设置了无结果信息")
     
@@ -2929,7 +2929,7 @@ class M3u8SearchDialog(QDialog):
         """搜索错误回调"""
         print(f"搜索错误回调被调用: {error}")
         self.search_btn.setEnabled(True)
-        self.update_status(f"❌ 搜索失败: {error}")
+        self.update_status(f"搜索失败: {error}")
         CustomMessageBox.show_error(self, "搜索失败", f"搜索过程中发生错误:\n{error}")
     
     def extract_selected(self):
@@ -3033,7 +3033,7 @@ class M3u8SearchDialog(QDialog):
         self.extract_selected_btn.setEnabled(False)
         self.extract_all_btn.setEnabled(False)
         
-        self.update_status(f"⚡ 开始提取 {len(urls)} 个M3U8链接...")
+        self.update_status(f"开始提取 {len(urls)} 个M3U8链接...")
         
         # 使用多线程并发提取（按照search.py的逻辑）
         self.search_threads = []
@@ -3056,7 +3056,7 @@ class M3u8SearchDialog(QDialog):
         self.extract_selected_btn.setEnabled(False)
         self.extract_all_btn.setEnabled(False)
 
-        self.update_status(f"⚡ 开始提取 {len(items)} 个详情页...")
+        self.update_status(f"开始提取 {len(items)} 个详情页...")
 
         # 在线程中执行提取
         extract_thread = threading.Thread(target=self._do_ncat_extraction, args=(items,))
@@ -3085,7 +3085,7 @@ class M3u8SearchDialog(QDialog):
                     print(f"跳过无效URL: {title}")
                     continue
 
-                self.update_status(f"⚡ 正在获取线路信息: {title} ({idx}/{len(items)})")
+                self.update_status(f"正在获取线路信息: {title} ({idx}/{len(items)})")
                 print(f"\n处理: {title}")
                 print(f"URL: {url}")
 
@@ -3098,7 +3098,7 @@ class M3u8SearchDialog(QDialog):
                 # 解析线路和剧集
                 routes = self.search_engine.parse_detail_routes(detail_html, url)
                 if not routes:
-                    print(f"⚠️ 未找到播放线路，跳过: {title}")
+                    print(f"未找到播放线路，跳过: {title}")
                     continue
 
                 print(f"找到 {len(routes)} 个播放线路")
@@ -3118,7 +3118,7 @@ class M3u8SearchDialog(QDialog):
                 print(f"选择线路: {selected_route}")
                 print(f"开始提取 {total_episodes} 集...")
 
-                self.update_status(f"⚡ 正在提取: {title} - {selected_route} (0/{total_episodes})")
+                self.update_status(f"正在提取: {title} - {selected_route} (0/{total_episodes})")
 
                 # 使用多线程并发提取所有剧集
                 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -3142,18 +3142,18 @@ class M3u8SearchDialog(QDialog):
                             current = completed_count[0]
 
                         # 更新UI进度
-                        self.update_status(f"⚡ 正在提取: {title} - {selected_route} ({current}/{total_episodes})")
+                        self.update_status(f"正在提取: {title} - {selected_route} ({current}/{total_episodes})")
 
                         if m3u8_url:
                             key = f"{title}_{selected_route}_{ep_name}"
-                            print(f"    ✅ [{current}/{total_episodes}] 成功: {ep_name}")
+                            print(f"    [{current}/{total_episodes}] 成功: {ep_name}")
                             return (key, m3u8_url)
                         else:
-                            print(f"    ❌ [{current}/{total_episodes}] 提取失败: {ep_name}")
+                            print(f"    [{current}/{total_episodes}] 提取失败: {ep_name}")
                             return None
 
                     except Exception as e:
-                        print(f"    ❌ 提取失败: {ep_name} - {e}")
+                        print(f"    提取失败: {ep_name} - {e}")
                         return None
 
                 # 准备任务列表
@@ -3161,7 +3161,7 @@ class M3u8SearchDialog(QDialog):
 
                 # 使用线程池并发处理（最多10个并发线程）
                 max_workers = min(10, total_episodes)
-                print(f"🚀 使用 {max_workers} 个线程并发提取...")
+                print(f"使用 {max_workers} 个线程并发提取...")
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     # 提交所有任务
@@ -3175,7 +3175,7 @@ class M3u8SearchDialog(QDialog):
                             all_results[key] = m3u8_url
 
                 success_count = len([k for k in all_results.keys() if k.startswith(f"{title}_{selected_route}")])
-                print(f"✅ 完成提取: {title} - 共成功 {success_count}/{total_episodes} 集")
+                print(f"完成提取: {title} - 共成功 {success_count}/{total_episodes} 集")
 
             # 使用信号通知UI更新
             self.signals.extraction_completed.emit(all_results)
@@ -3195,7 +3195,7 @@ class M3u8SearchDialog(QDialog):
         self.extract_selected_btn.setEnabled(False)
         self.extract_all_btn.setEnabled(False)
 
-        self.update_status("🔄 正在提取M3U8链接...")
+        self.update_status("正在提取 M3U8 链接...")
 
         # 在线程中执行提取
         extract_thread = threading.Thread(target=self._do_mofa_extraction, args=(items,))
@@ -3210,7 +3210,7 @@ class M3u8SearchDialog(QDialog):
 
         self.extract_selected_btn.setEnabled(False)
         self.extract_all_btn.setEnabled(False)
-        self.update_status(f"⚡ 开始提取爱壹帆标清 M3U8（{len(items)} 部）...")
+        self.update_status(f"开始提取爱壹帆标清 M3U8（{len(items)} 部）...")
 
         extract_thread = threading.Thread(target=self._do_iyf_extraction, args=(items,))
         extract_thread.daemon = True
@@ -3228,14 +3228,14 @@ class M3u8SearchDialog(QDialog):
                 title = item.get("title", f"视频{idx}")
                 brief_count = len(item.get("episodes") or [])
                 self.update_status(
-                    f"⚡ 正在提取: {title} ({idx}/{len(items)}, {brief_count} 集)"
+                    f"正在提取: {title} ({idx}/{len(items)}, {brief_count} 集)"
                 )
                 print(f"\n处理爱壹帆: {title} | 搜索结果约 {brief_count} 集")
 
                 try:
                     extracted = self.search_engine.extract_item(item)
                 except Exception as exc:
-                    print(f"❌ 爱壹帆提取失败: {title} - {exc}")
+                    print(f"爱壹帆提取失败: {title} - {exc}")
                     continue
 
                 all_results.update(extracted)
@@ -3244,7 +3244,7 @@ class M3u8SearchDialog(QDialog):
                     or len(item.get("episodes") or [])
                     or brief_count
                 )
-                print(f"✅ 完成提取: {title} - 成功 {len(extracted)}/{total_episodes} 集")
+                print(f"完成提取: {title} - 成功 {len(extracted)}/{total_episodes} 集")
 
             self.signals.extraction_completed.emit(all_results)
         except Exception as e:
@@ -3265,16 +3265,16 @@ class M3u8SearchDialog(QDialog):
                     play_from = item.get('play_from', 'default')
 
                     if not play_url:
-                        print(f"⚠️ {title} 没有播放链接")
+                        print(f"{title} 没有播放链接")
                         continue
 
-                    print(f"\n📺 正在处理: {title}")
+                    print(f"\n正在处理: {title}")
 
                     # 解析播放链接
                     routes = self.search_engine.parse_detail_routes(item)
 
                     if not routes:
-                        print(f"⚠️ {title} 没有可用的播放线路")
+                        print(f"{title} 没有可用的播放线路")
                         continue
 
                     # 显示线路信息
@@ -3288,7 +3288,7 @@ class M3u8SearchDialog(QDialog):
                         # 多个线路时，让用户选择
                         selected_route = self._show_route_selection_dialog(routes, title)
                         if not selected_route:
-                            print(f"⚠️ 用户取消了线路选择")
+                            print("用户取消了线路选择")
                             continue
 
                     # 获取选中线路的剧集
@@ -3296,7 +3296,7 @@ class M3u8SearchDialog(QDialog):
                     episodes = route_info['episodes']
                     total_episodes = route_info['total']
 
-                    print(f"✓ 选择线路: {selected_route} | 共 {total_episodes} 集")
+                    print(f"选择线路: {selected_route} | 共 {total_episodes} 集")
 
                     # 魔法影视的播放链接已经是m3u8格式，直接添加到结果
                     for ep_name, ep_url in episodes:
@@ -3304,7 +3304,7 @@ class M3u8SearchDialog(QDialog):
                         all_results[key] = ep_url
                         print(f"   ✓ {ep_name}: {ep_url[:60]}...")
 
-                    print(f"✅ 完成提取: {title} - 共 {len(episodes)} 集")
+                    print(f"完成提取: {title} - 共 {len(episodes)} 集")
 
             # 使用信号通知UI更新
             self.signals.extraction_completed.emit(all_results)
@@ -3329,24 +3329,24 @@ class M3u8SearchDialog(QDialog):
         self.route_selection_event = threading.Event()
         self.route_selection_result = None
         
-        print(f"📺 [工作线程] 准备发送信号显示对话框...")
+        print("[工作线程] 准备发送信号显示对话框...")
         
         # 发送信号到主线程显示对话框
         self.signals.show_route_dialog.emit(routes, title, None)
         
         # 等待对话框完成
-        print(f"📺 [工作线程] 等待对话框完成...")
+        print("[工作线程] 等待对话框完成...")
         self.route_selection_event.wait()
         
         result = self.route_selection_result
-        print(f"📺 [工作线程] 对话框完成，返回结果: {result}")
+        print(f"[工作线程] 对话框完成，返回结果: {result}")
         
         return result
     
     def _on_show_route_dialog(self, routes, title, _):
         """在主线程中显示线路选择对话框"""
         try:
-            print(f"📺 [主线程] 准备显示线路选择对话框: {title}")
+            print(f"[主线程] 准备显示线路选择对话框: {title}")
             print(f"   可用线路数: {len(routes)}")
             
             dialog = RouteSelectionDialog(routes, title, self)
@@ -3357,20 +3357,20 @@ class M3u8SearchDialog(QDialog):
             if dialog_result == QDialog.Accepted:
                 selected = dialog.get_selected_route()
                 self.route_selection_result = selected
-                print(f"   ✅ [主线程] 用户选择了线路: {selected}")
+                print(f"[主线程] 用户选择了线路: {selected}")
                 print(f"   存储到 self.route_selection_result: {self.route_selection_result}")
             else:
-                print(f"   ❌ [主线程] 用户取消了选择")
+                print("[主线程] 用户取消了选择")
                 self.route_selection_result = None
                 
         except Exception as e:
-            print(f"❌ 显示线路选择对话框失败: {e}")
+            print(f"显示线路选择对话框失败: {e}")
             import traceback
             traceback.print_exc()
             self.route_selection_result = None
         finally:
             # 无论成功失败都要设置事件，避免死锁
-            print(f"📺 [主线程] 设置事件，通知工作线程继续...")
+            print("[主线程] 设置事件，通知工作线程继续...")
             if self.route_selection_event:
                 self.route_selection_event.set()
     
@@ -3400,7 +3400,7 @@ class M3u8SearchDialog(QDialog):
         self.extract_all_btn.setEnabled(True)
         
         if results:
-            self.update_status(f"🎉 提取完成! 获得 {len(results)} 个M3U8链接")
+            self.update_status(f"提取完成: 获得 {len(results)} 个M3U8链接")
             
             # 显示结果
             result_text = self.results_text.toPlainText() + "\n\n"
@@ -3418,7 +3418,7 @@ class M3u8SearchDialog(QDialog):
             self.copy_btn.setEnabled(True)
             
         else:
-            self.update_status("❌ 提取失败，未获得有效M3U8链接")
+            self.update_status("提取失败，未获得有效 M3U8 链接")
     
     def copy_results(self):
         """复制结果到剪贴板"""
@@ -3449,7 +3449,7 @@ class M3u8SearchDialog(QDialog):
         self.extract_all_btn.setEnabled(False)
         self.copy_btn.setEnabled(False)
         
-        self.update_status("🧹 已清空所有结果")
+        self.update_status("已清空所有结果")
 
 
 class MainWindow(QMainWindow):
@@ -4951,14 +4951,14 @@ class MainWindow(QMainWindow):
         """显示关于对话框"""
         about_message = """M3U8 下载器 v1.0
 
-一个基于 PySide6 构建的桌面下载工具，专注于把 m3u8 下载、批量任务、请求头配置和片源搜索整合到同一个工作台中。
+基于 PySide6 的桌面端 HLS / M3U8 下载工具，界面采用简约工作台风格，将下载、任务队列、请求头配置与片源搜索放在同一处。
 
-核心功能：
+主要能力：
 • 多线程下载与任务队列
-• AES 加密视频解密
-• 自定义请求头与常用模板
-• 批量任务管理与进度概览
-• 片源搜索与提取辅助
+• AES 加密流解密与 FFmpeg 合并
+• 自定义请求头与模板
+• 实时日志与进度概览
+• 可选片源搜索与提取
 
 开源地址：
 github.com/shayuaidoudou/m3u8-anime-downloader"""
@@ -5150,7 +5150,7 @@ github.com/shayuaidoudou/m3u8-anime-downloader"""
                 if default_path and os.path.exists(default_path) and hasattr(self, 'output_input'):
                     self.output_input.setText(default_path)
                 
-                print(f"✅ 已加载用户设置: 线程数={default_threads}, 路径={default_path}, 主题={theme_index}")
+                print(f"已加载用户设置: 线程数={default_threads}, 路径={default_path}, 主题={theme_index}")
                 
         except Exception as e:
             print(f"⚠️ 加载用户设置失败: {e}")
