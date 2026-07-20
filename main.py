@@ -4655,7 +4655,7 @@ class MainWindow(QMainWindow):
     def open_github_repo(self):
         """打开GitHub仓库"""
         try:
-            github_url = "https://github.com/shayuaidoudou/m3u8-anime-downloader"
+            github_url = "https://github.com/shayuaidoudou/m3u8-downloader"
             QDesktopServices.openUrl(QUrl(github_url))
             self.statusBar().showMessage("正在打开 GitHub 仓库…")
         except Exception as e:
@@ -4961,7 +4961,7 @@ class MainWindow(QMainWindow):
 • 可选片源搜索与提取
 
 开源地址：
-github.com/shayuaidoudou/m3u8-anime-downloader"""
+github.com/shayuaidoudou/m3u8-downloader"""
         
         CustomMessageBox.show_info(
             self,

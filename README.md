@@ -30,8 +30,8 @@
 ## 安装与运行
 
 ```bash
-git clone https://github.com/shayuaidoudou/m3u8-anime-downloader.git
-cd m3u8-anime-downloader
+git clone https://github.com/shayuaidoudou/m3u8-downloader.git
+cd m3u8-downloader
 pip install -r requirements.txt
 python main.py
 ```
@@ -112,8 +112,8 @@ python -m pytest test/ -q
 
 ## 相关链接
 
-- [GitHub](https://github.com/shayuaidoudou/m3u8-anime-downloader)
-- [Issues](https://github.com/shayuaidoudou/m3u8-anime-downloader/issues)
+- [GitHub](https://github.com/shayuaidoudou/m3u8-downloader)
+- [Issues](https://github.com/shayuaidoudou/m3u8-downloader/issues)
 - [作者博客](https://blog.csdn.net/m0_73641772?type=blog)
 
 ## License
