@@ -17,6 +17,134 @@ from cryptography.hazmat.backends import default_backend
 import threading
 from typing import List, Optional, Callable, Dict, Any
 import time
+import subprocess
+import shutil
+import platform
+import urllib3
+
+# 禁用SSL警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+class FFmpegMerger:
+    """FFmpeg视频合并工具"""
+
+    def __init__(self):
+        self.ffmpeg_path = self._find_ffmpeg()
+        self.available = self.ffmpeg_path is not None
+
+    def _find_ffmpeg(self) -> Optional[str]:
+        """查找FFmpeg可执行文件"""
+        # 1. 检查项目目录下的 ffmpeg 文件夹（兼容 Windows/macOS/Linux）
+        project_dir = os.path.dirname(__file__)
+        project_candidates = [
+            os.path.join(project_dir, 'ffmpeg', 'ffmpeg.exe'),
+            os.path.join(project_dir, 'ffmpeg', 'ffmpeg'),
+        ]
+        for project_ffmpeg in project_candidates:
+            if os.path.isfile(project_ffmpeg) and os.access(project_ffmpeg, os.X_OK):
+                print(f"[DEBUG] 找到项目内置FFmpeg: {project_ffmpeg}")
+                return project_ffmpeg
+
+        # 2. 检查系统 PATH 中的 ffmpeg
+        ffmpeg_in_path = shutil.which('ffmpeg')
+        if ffmpeg_in_path:
+            print(f"[DEBUG] PATH中找到FFmpeg: {ffmpeg_in_path}")
+            return ffmpeg_in_path
+
+        # 3. 常见安装路径
+        common_paths = []
+        system_name = platform.system()
+        if system_name == 'Windows':
+            common_paths = [
+                r'C:\ffmpeg\bin\ffmpeg.exe',
+                r'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
+                r'C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe',
+            ]
+        elif system_name == 'Darwin':
+            common_paths = [
+                '/opt/homebrew/bin/ffmpeg',
+                '/usr/local/bin/ffmpeg',
+                '/opt/local/bin/ffmpeg',
+            ]
+        else:
+            common_paths = [
+                '/usr/bin/ffmpeg',
+                '/usr/local/bin/ffmpeg',
+                '/snap/bin/ffmpeg',
+            ]
+        for path in common_paths:
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                print(f"[DEBUG] 找到FFmpeg: {path}")
+                return path
+
+        print("[WARNING] 未找到FFmpeg，将使用备用合并方案")
+        return None
+
+    def merge_segments(self, segment_files: List[str], output_path: str) -> bool:
+        """使用FFmpeg合并TS片段"""
+        if not self.available:
+            return False
+
+        try:
+            # 创建临时的文件列表
+            concat_file = output_path + '_concat.txt'
+
+            try:
+                with open(concat_file, 'w', encoding='utf-8') as f:
+                    for segment_file in sorted(segment_files):
+                        # FFmpeg concat demuxer 格式
+                        abs_path = os.path.abspath(segment_file)
+                        f.write(f"file '{abs_path}'\n")
+
+                print(f"[DEBUG] 创建FFmpeg文件列表: {concat_file}")
+
+                # 构建FFmpeg命令
+                cmd = [
+                    self.ffmpeg_path,
+                    '-f', 'concat',
+                    '-safe', '0',
+                    '-i', concat_file,
+                    '-c', 'copy',  # 直接复制，不重新编码
+                    '-y',  # 覆盖输出文件
+                    output_path
+                ]
+
+                print(f"[DEBUG] 执行FFmpeg命令: {' '.join(cmd)}")
+
+                # 执行FFmpeg (Windows下隐藏控制台窗口)
+                startupinfo = None
+                if platform.system() == 'Windows':
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = subprocess.SW_HIDE
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600,  # 1小时超时
+                    startupinfo=startupinfo  # 隐藏窗口
+                )
+
+                if result.returncode != 0:
+                    print(f"[ERROR] FFmpeg合并失败: {result.stderr}")
+                    return False
+
+                print(f"[DEBUG] FFmpeg合并成功: {output_path}")
+                return True
+
+            finally:
+                # 清理临时文件
+                if os.path.exists(concat_file):
+                    try:
+                        os.remove(concat_file)
+                    except Exception as e:
+                        print(f"[WARNING] 删除临时文件失败: {e}")
+
+        except Exception as e:
+            print(f"[ERROR] FFmpeg合并异常: {e}")
+            return False
 
 
 class AESDecryptor:
@@ -41,7 +169,8 @@ class AESDecryptor:
             print(f"[DEBUG] 获取密钥: {key_uri}")
             print(f"[DEBUG] 密钥请求头: {request_headers}")
             
-            response = requests.get(key_uri, headers=request_headers, timeout=10)
+            # 禁用SSL证书验证以避免证书错误
+            response = requests.get(key_uri, headers=request_headers, timeout=10, verify=False)
             response.raise_for_status()
             key = response.content
             self.key_cache[key_uri] = key
@@ -94,8 +223,9 @@ class M3U8Parser:
         try:
             print(f"[DEBUG] 请求M3U8文件: {url}")
             print(f"[DEBUG] 请求头: {self.headers}")
-            
-            response = requests.get(url, headers=self.headers, timeout=15)
+
+            # 禁用SSL证书验证以避免证书错误
+            response = requests.get(url, headers=self.headers, timeout=15, verify=False)
             print(f"[DEBUG] 响应状态码: {response.status_code}")
             print(f"[DEBUG] 响应头: {dict(response.headers)}")
             
@@ -203,6 +333,13 @@ class M3U8Parser:
             return playlist_info
             
         except requests.exceptions.RequestException as e:
+            response = getattr(e, 'response', None)
+            print(f"[ERROR] M3U8网络请求异常类型: {type(e).__name__}")
+            print(f"[ERROR] M3U8请求失败URL: {url}")
+            if response is not None:
+                print(f"[ERROR] M3U8失败状态码: {response.status_code}")
+                print(f"[ERROR] M3U8失败响应头: {dict(response.headers)}")
+                print(f"[ERROR] M3U8失败响应预览: {response.text[:500]}")
             raise Exception(f"网络请求失败: {e}")
         except Exception as e:
             print(f"[ERROR] M3U8解析异常: {str(e)}")
@@ -270,14 +407,15 @@ class ProgressCallback:
 
 class M3U8Downloader:
     """M3U8高速下载器"""
-    
+
     def __init__(self, max_workers: int = 10, max_retries: int = 3, custom_headers: Dict[str, str] = None):
         self.max_workers = max_workers
         self.max_retries = max_retries
         self.custom_headers = custom_headers or {}
-        
+
         self.parser = M3U8Parser(custom_headers)
         self.decryptor = AESDecryptor(custom_headers)
+        self.ffmpeg_merger = FFmpegMerger()  # 初始化FFmpeg合并器
         self.session = requests.Session()
         
         # 设置默认请求头
@@ -405,6 +543,7 @@ class M3U8Downloader:
                         if progress:
                             progress.update_progress(False)
                 except Exception as e:
+                    print(f"[ERROR] 片段任务 {index} 执行异常: {type(e).__name__}: {e}")
                     if progress:
                         progress.update_progress(False)
         
@@ -424,7 +563,8 @@ class M3U8Downloader:
                 if attempt == 0:
                     print(f"[DEBUG] 开始下载片段 {index}: {url}")
                 
-                response = self.session.get(url, timeout=30)
+                # 禁用SSL证书验证以避免证书错误
+                response = self.session.get(url, timeout=30, verify=False)
                 response.raise_for_status()
                 
                 data = response.content
@@ -454,7 +594,13 @@ class M3U8Downloader:
                 return file_path
                 
             except Exception as e:
-                print(f"[ERROR] 下载片段 {index} 失败 (尝试 {attempt + 1}/{self.max_retries}): {e}")
+                response = getattr(e, 'response', None)
+                print(f"[ERROR] 下载片段 {index} 失败 (尝试 {attempt + 1}/{self.max_retries}): {type(e).__name__}: {e}")
+                print(f"[ERROR] 片段 {index} URL: {url}")
+                if response is not None:
+                    print(f"[ERROR] 片段 {index} 状态码: {response.status_code}")
+                    print(f"[ERROR] 片段 {index} 响应头: {dict(response.headers)}")
+                    print(f"[ERROR] 片段 {index} 响应预览: {response.text[:300]}")
                 if attempt == self.max_retries - 1:
                     print(f"[ERROR] 片段 {index} 最终下载失败: {e}")
                     return None
@@ -467,12 +613,52 @@ class M3U8Downloader:
         return None
     
     def _merge_segments(self, segment_files: List[str], output_path: str):
-        """合并视频片段"""
+        """合并视频片段 - 优先使用FFmpeg，备用简单合并"""
+        print(f"[DEBUG] 开始合并 {len(segment_files)} 个片段到 {output_path}")
+
+        # 尝试使用FFmpeg合并
+        if self.ffmpeg_merger.available:
+            print("[DEBUG] 使用FFmpeg进行合并...")
+            if self.ffmpeg_merger.merge_segments(segment_files, output_path):
+                print("[DEBUG] FFmpeg合并成功")
+                return
+            else:
+                print("[WARNING] FFmpeg合并失败，尝试备用方案...")
+        else:
+            print("[INFO] FFmpeg不可用，使用备用合并方案")
+
+        # 备用方案：智能TS合并（跳过冗余的PAT/PMT）
+        self._merge_segments_fallback(segment_files, output_path)
+
+    def _merge_segments_fallback(self, segment_files: List[str], output_path: str):
+        """备用合并方案 - 智能TS合并，处理PAT/PMT冗余"""
+        TS_PACKET_SIZE = 188
+
         with open(output_path, 'wb') as output_file:
-            for segment_file in sorted(segment_files):
-                if os.path.exists(segment_file):
-                    with open(segment_file, 'rb') as f:
-                        output_file.write(f.read())
+            for idx, segment_file in enumerate(sorted(segment_files)):
+                if not os.path.exists(segment_file):
+                    continue
+
+                with open(segment_file, 'rb') as f:
+                    data = f.read()
+
+                if idx == 0:
+                    # 第一个片段完整保留（包含PAT/PMT）
+                    output_file.write(data)
+                    print(f"[DEBUG] 片段 {idx}: 完整写入 {len(data)} 字节")
+                else:
+                    # 后续片段：跳过前面的PAT/PMT包（通常前10个包）
+                    skip_packets = 10
+                    skip_bytes = skip_packets * TS_PACKET_SIZE
+
+                    if len(data) > skip_bytes:
+                        output_file.write(data[skip_bytes:])
+                        print(f"[DEBUG] 片段 {idx}: 跳过 {skip_bytes} 字节，写入 {len(data) - skip_bytes} 字节")
+                    else:
+                        output_file.write(data)
+                        print(f"[DEBUG] 片段 {idx}: 数据过小，完整写入 {len(data)} 字节")
+
+        print(f"[DEBUG] 备用合并完成: {output_path}")
     
     def stop_download(self):
         """停止下载"""

@@ -4,3 +4,7 @@ cryptography==41.0.7
 aiohttp==3.9.1
 asyncio-throttle==1.0.2
 tqdm==4.66.1
+beautifulsoup4==4.12.2
+lxml==4.9.3
+pycryptodome==3.19.0
+DrissionPage>=4.1.0
