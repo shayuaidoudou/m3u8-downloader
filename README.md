@@ -19,9 +19,7 @@
 
 ## 界面预览
 
-![主界面](https://cdn.jsdelivr.net/gh/shayuaidoudou/Pictures@master/image-20250828215408502.png)
-
-![设置](https://cdn.jsdelivr.net/gh/shayuaidoudou/Pictures@master/image-20250828215418634.png)
+![主界面](assets/screenshot-main.png)
 
 ## 环境要求
 
@@ -79,7 +77,9 @@ python install.py
 ├── search_ncat.py          # NCat22
 ├── search_mofa.py          # 魔法影视
 ├── search_iyf.py           # 爱壹帆
-├── assets/favicon.ico
+├── assets/
+│   ├── favicon.ico
+│   └── screenshot-main.png
 ├── test/                   # 单元测试
 ├── requirements.txt
 ├── FFMPEG_SETUP.md
