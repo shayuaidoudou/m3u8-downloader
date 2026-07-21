@@ -11,12 +11,12 @@ DEFAULT_CONFIG = {
     'max_retries': 3,               # 最大重试次数
     'timeout': 30,                  # 请求超时时间（秒）
     'chunk_size': 8192,             # 下载块大小
-    
+
     # UI设置
     'window_width': 1200,           # 窗口默认宽度
     'window_height': 900,           # 窗口默认高度
     'theme': 'modern',              # 界面主题
-    
+
     # 网络设置
     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'headers': {
@@ -25,11 +25,11 @@ DEFAULT_CONFIG = {
         'Accept-Encoding': 'gzip, deflate',
         'Connection': 'keep-alive',
     },
-    
+
     # 文件设置
     'temp_dir_suffix': '_temp',     # 临时目录后缀
     'segment_name_format': 'segment_{index:06d}.ts',  # 片段文件命名格式
-    
+
     # 高级设置
     'enable_proxy': False,          # 是否启用代理
     'proxy_url': '',               # 代理地址
@@ -37,7 +37,12 @@ DEFAULT_CONFIG = {
     'log_level': 'INFO',           # 日志级别
 }
 
+# 全局统一圆角（卡片 / 按钮 / 输入框共用）
+RADIUS = 10
+
 # 现代极简设计 token（亮色默认；暗色主题由 THEMES 覆盖表面色）
+# 基础色板：bg / surface / primary / text / text_muted
+# 语义色：success / warning / danger
 UI_TOKENS = {
     'primary': '#4F46E5',
     'primary_hover': '#4338CA',
@@ -56,10 +61,12 @@ UI_TOKENS = {
     'success': '#059669',
     'warning': '#D97706',
     'danger': '#DC2626',
-    'radius_card': 12,
-    'radius_control': 8,
-    'radius_tag': 6,
-    'radius_progress': 3,
+    # 统一圆角；旧键名保留为别名，避免散落引用断裂
+    'radius': RADIUS,
+    'radius_card': RADIUS,
+    'radius_control': RADIUS,
+    'radius_tag': RADIUS,
+    'radius_progress': RADIUS,
 }
 
 # 主界面可选主题。顺序与偏好设置中的下拉框保持一致。
@@ -162,6 +169,78 @@ def get_theme_name(theme_index):
     if 0 <= theme_index < len(THEME_NAMES):
         return THEME_NAMES[theme_index]
     return f'未知主题 ({theme_index})'
+
+
+def _hex_to_rgb(hex_color):
+    value = hex_color.lstrip('#')
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _mix_hex(hex_color, other, ratio):
+    """按 ratio 混合 two hex；ratio=0 偏向 hex_color，1 偏向 other。"""
+    r1, g1, b1 = _hex_to_rgb(hex_color)
+    r2, g2, b2 = _hex_to_rgb(other)
+    r = int(r1 + (r2 - r1) * ratio)
+    g = int(g1 + (g2 - g1) * ratio)
+    b = int(b1 + (b2 - b1) * ratio)
+    return f'#{r:02X}{g:02X}{b:02X}'
+
+
+def merge_theme_tokens(theme_index, base=None):
+    """把主题强调色/亮暗表面合并进 UI_TOKENS，供 stylesheet 一次生成。"""
+    tokens = dict(base or UI_TOKENS)
+    theme = get_theme(theme_index)
+
+    primary = theme.get('primary', tokens['primary'])
+    secondary = theme.get('secondary', tokens['primary_hover'])
+    accent = theme.get('accent', tokens['primary_active'])
+    is_dark = bool(theme.get('is_dark', False))
+
+    tokens['primary'] = primary
+    tokens['primary_hover'] = secondary
+    tokens['primary_active'] = accent
+    tokens['border_focus'] = _mix_hex(primary, '#FFFFFF' if is_dark else '#FFFFFF', 0.55)
+    tokens['primary_soft'] = (
+        _mix_hex(primary, '#0F172A', 0.82) if is_dark else _mix_hex(primary, '#FFFFFF', 0.88)
+    )
+
+    if is_dark:
+        bg = theme.get('bg_start', '#0F172A')
+        surface = theme.get('groupbox_bg', '#1E293B')
+        text = theme.get('text_color', '#E2E8F0')
+        border = theme.get('input_border', '#334155')
+        tokens.update({
+            'bg': bg,
+            'surface': surface,
+            'surface_alt': _mix_hex(surface, '#000000', 0.18),
+            'surface_hover': _mix_hex(surface, '#FFFFFF', 0.08),
+            'text': text,
+            'text_muted': _mix_hex(text, bg, 0.35),
+            'text_subtle': _mix_hex(text, bg, 0.50),
+            'border': border,
+            'border_strong': _mix_hex(border, '#FFFFFF', 0.12),
+        })
+    else:
+        tokens.update({
+            'bg': theme.get('bg_start', tokens['bg']),
+            'surface': theme.get('groupbox_bg', tokens['surface']),
+            'surface_alt': '#F5F5F5',
+            'surface_hover': '#F0F0F0',
+            'text': theme.get('text_color', tokens['text']),
+            'text_muted': '#6B7280',
+            'text_subtle': '#9CA3AF',
+            'border': theme.get('input_border', tokens['border']),
+            'border_strong': '#D1D5DB',
+        })
+
+    tokens['radius'] = RADIUS
+    tokens['radius_card'] = RADIUS
+    tokens['radius_control'] = RADIUS
+    tokens['radius_tag'] = RADIUS
+    tokens['radius_progress'] = RADIUS
+    tokens['is_dark'] = is_dark
+    return tokens
+
 
 # 支持的视频格式
 SUPPORTED_FORMATS = [

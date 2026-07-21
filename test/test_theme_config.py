@@ -1,6 +1,14 @@
 import unittest
 
-from config import THEMES, THEME_NAMES, get_theme, get_theme_name
+from config import (
+    THEMES,
+    THEME_NAMES,
+    UI_TOKENS,
+    get_theme,
+    get_theme_name,
+    merge_theme_tokens,
+)
+from theme import build_stylesheet
 
 
 REQUIRED_THEME_FIELDS = {
@@ -40,6 +48,30 @@ class ThemeConfigTests(unittest.TestCase):
     def test_get_theme_name_handles_unknown_index(self):
         self.assertEqual(get_theme_name(0), THEME_NAMES[0])
         self.assertEqual(get_theme_name(999), '未知主题 (999)')
+
+    def test_merge_theme_tokens_unifies_radius_and_primary(self):
+        tokens = merge_theme_tokens(0)
+        self.assertEqual(tokens['radius'], UI_TOKENS['radius'])
+        self.assertEqual(tokens['radius_card'], tokens['radius'])
+        self.assertEqual(tokens['primary'], THEMES[0]['primary'])
+        self.assertFalse(tokens['is_dark'])
+
+        dark = merge_theme_tokens(7)
+        self.assertTrue(dark['is_dark'])
+        self.assertEqual(dark['primary'], THEMES[7]['primary'])
+        self.assertNotEqual(dark['bg'], tokens['bg'])
+
+    def test_build_stylesheet_contains_interaction_states(self):
+        qss = build_stylesheet(merge_theme_tokens(0))
+        self.assertTrue(qss)
+        for needle in (
+            'QPushButton:hover',
+            'QPushButton:pressed',
+            'QPushButton:disabled',
+            'QLineEdit:focus',
+            'border-radius:',
+        ):
+            self.assertIn(needle, qss)
 
 
 if __name__ == '__main__':

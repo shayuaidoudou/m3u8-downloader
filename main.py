@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon, QMenu, QMessageBox, QSplitter, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
     QComboBox, QDialog, QDialogButtonBox, QPlainTextEdit, QScrollArea,
-    QGraphicsOpacityEffect,
+    QGraphicsOpacityEffect, QSizeGrip,
 )
 from PySide6.QtCore import (
-    Qt, QThread, Signal, QTimer, QUrl, QPropertyAnimation, 
+    Qt, QThread, Signal, QTimer, QUrl, QPropertyAnimation,
     QEasingCurve, QRect, QSize, QObject
 )
 from PySide6.QtGui import (
@@ -45,6 +45,20 @@ from config import (
     UI_TOKENS,
     get_theme,
     get_theme_name,
+    merge_theme_tokens,
+)
+from theme import (
+    FONT_BODY,
+    FONT_CAPTION,
+    FONT_TITLE,
+    TitleBar,
+    app_font,
+    apply_app_theme,
+    apply_drop_shadow,
+    build_stylesheet,
+    polish_widget,
+    qta_icon,
+    resolve_app_font,
 )
 from search import (
     CHANNEL_INPUT_COOKIE,
@@ -89,14 +103,6 @@ def resolve_app_icon():
     return None
 
 
-def app_font(size, weight=QFont.Normal):
-    """继承全局字体族，仅设置字号与字重。"""
-    font = QFont()
-    font.setPointSize(size)
-    font.setWeight(weight)
-    return font
-
-
 def append_spring_boot_log(widget, message, thread_name="main"):
     """把一行日志以 Spring Boot 风格彩色写入 QPlainTextEdit。"""
     if widget is None:
@@ -128,27 +134,13 @@ def append_spring_boot_log(widget, message, thread_name="main"):
 
 
 def _make_close_button(on_click):
-    """无边框关闭按钮，用于自绘对话框标题栏。"""
+    """无边框关闭按钮（用文字 ×，避免图标库在弹窗里变成色块）。"""
     btn = QPushButton("×")
-    btn.setFixedSize(28, 28)
-    btn.setFont(app_font(14, QFont.Normal))
+    btn.setObjectName("title_close_btn")
+    btn.setFixedSize(34, 34)
+    btn.setFont(app_font(18, QFont.Normal))
     btn.setCursor(Qt.PointingHandCursor)
-    btn.setStyleSheet(f"""
-        QPushButton {{
-            background: transparent;
-            color: {UI_TOKENS['text_subtle']};
-            border: none;
-            border-radius: {UI_TOKENS['radius_tag']}px;
-            padding: 0;
-        }}
-        QPushButton:hover {{
-            background: {UI_TOKENS['surface_alt']};
-            color: {UI_TOKENS['text']};
-        }}
-        QPushButton:pressed {{
-            background: {UI_TOKENS['surface_hover']};
-        }}
-    """)
+    btn.setFlat(True)
     btn.clicked.connect(on_click)
     return btn
 
@@ -209,149 +201,53 @@ class DownloadWorker(QThread):
 
 
 class ModernButton(QPushButton):
-    """统一按钮：primary / default / danger 三档，样式集中在此。"""
+    """统一按钮：primary / default / danger，样式由全局 QSS 的 variant 属性驱动。"""
 
-    def __init__(self, text, primary=False, icon_text="", variant=None):
+    def __init__(self, text, primary=False, icon_text="", variant=None, icon_name=None):
         super().__init__(text)
         self.primary = primary
         self.icon_text = icon_text
         self._variant = variant or ('primary' if primary else 'default')
         self.setMinimumHeight(36)
-        self.setFont(app_font(10, QFont.DemiBold))
+        self.setFont(app_font(FONT_BODY, QFont.DemiBold))
         self.setCursor(Qt.PointingHandCursor)
-
-        if icon_text:
+        self.setProperty("variant", self._variant)
+        if icon_name:
+            self.setProperty("icon_name", icon_name)
+            color = '#FFFFFF' if self._variant == 'primary' else UI_TOKENS['text_muted']
+            if self._variant == 'danger':
+                color = UI_TOKENS['danger']
+            self.setIcon(qta_icon(icon_name, color=color))
+        elif icon_text:
             self.setText(f"{icon_text} {text}")
-
-        self._apply_variant()
+        polish_widget(self)
 
     def _apply_variant(self):
-        radius = UI_TOKENS['radius_control']
-        text_muted = UI_TOKENS['text_muted']
-        border = UI_TOKENS['border']
-        surface_alt = UI_TOKENS['surface_alt']
-
-        if self._variant == 'primary':
-            primary_color = UI_TOKENS['primary']
-            hover = UI_TOKENS['primary_hover']
-            active = UI_TOKENS['primary_active']
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    background: {primary_color};
-                    color: #FFFFFF;
-                    border: 1px solid {primary_color};
-                    border-radius: {radius}px;
-                    padding: 8px 18px;
-                }}
-                QPushButton:hover {{ background: {hover}; border-color: {hover}; }}
-                QPushButton:pressed {{ background: {active}; border-color: {active}; }}
-                QPushButton:disabled {{
-                    background: {surface_alt};
-                    color: {text_muted};
-                    border-color: {border};
-                }}
-            """)
-        elif self._variant == 'danger':
-            danger = UI_TOKENS['danger']
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    background: {UI_TOKENS['surface']};
-                    color: {danger};
-                    border: 1px solid {border};
-                    border-radius: {radius}px;
-                    padding: 8px 14px;
-                }}
-                QPushButton:hover {{
-                    background: {surface_alt};
-                    border-color: {danger};
-                }}
-                QPushButton:pressed {{
-                    background: {surface_alt};
-                }}
-                QPushButton:disabled {{
-                    background: {surface_alt};
-                    color: {text_muted};
-                    border-color: {border};
-                }}
-            """)
-        else:  # default
-            primary_color = UI_TOKENS['primary']
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    background: {UI_TOKENS['surface']};
-                    color: {UI_TOKENS['text']};
-                    border: 1px solid {border};
-                    border-radius: {radius}px;
-                    padding: 8px 14px;
-                }}
-                QPushButton:hover {{
-                    background: {surface_alt};
-                    border-color: {UI_TOKENS['border_strong']};
-                    color: {primary_color};
-                }}
-                QPushButton:pressed {{
-                    background: {surface_alt};
-                    border-color: {primary_color};
-                }}
-                QPushButton:disabled {{
-                    background: {surface_alt};
-                    color: {text_muted};
-                    border-color: {border};
-                }}
-            """)
+        self.setProperty("variant", self._variant)
+        polish_widget(self)
 
 
 class ModernLineEdit(QLineEdit):
-    """现代极简输入框"""
+    """现代极简输入框（样式走全局 QSS）"""
 
     def __init__(self, placeholder="", icon_text=""):
         super().__init__()
         self.setPlaceholderText(placeholder)
         self.setMinimumHeight(40)
-        self.setFont(app_font(10))
+        self.setFont(app_font(FONT_BODY))
         self.setClearButtonEnabled(True)
-
         if icon_text:
             self.setPlaceholderText(f"{icon_text} {placeholder}")
 
-        self.setStyleSheet(f"""
-            QLineEdit {{
-                border: 1px solid {UI_TOKENS['border']};
-                border-radius: {UI_TOKENS['radius_control']}px;
-                padding: 8px 12px;
-                background: {UI_TOKENS['surface']};
-                color: {UI_TOKENS['text']};
-                selection-background-color: {UI_TOKENS['primary']};
-                selection-color: #FFFFFF;
-            }}
-            QLineEdit:focus {{
-                border-color: {UI_TOKENS['primary']};
-            }}
-            QLineEdit:hover {{
-                border-color: {UI_TOKENS['border_focus']};
-            }}
-        """)
-
 
 class ModernProgressBar(QProgressBar):
-    """现代极简进度条"""
+    """现代极简进度条（样式走全局 QSS）"""
 
     def __init__(self):
         super().__init__()
         self.setMinimumHeight(6)
         self.setMaximumHeight(8)
         self.setTextVisible(False)
-        self.setStyleSheet(f"""
-            QProgressBar {{
-                border: none;
-                border-radius: {UI_TOKENS['radius_progress']}px;
-                background: {UI_TOKENS['surface_alt']};
-            }}
-            QProgressBar::chunk {{
-                border-radius: {UI_TOKENS['radius_progress']}px;
-                background: {UI_TOKENS['primary']};
-            }}
-        """)
 
 
 class DownloadTaskWidget(QFrame):
@@ -370,8 +266,8 @@ class DownloadTaskWidget(QFrame):
         
         self.setFrameStyle(QFrame.NoFrame)
         self._apply_card_style()
-        
         self.setup_ui()
+        apply_drop_shadow(self, blur=16, alpha=28, y_offset=3)
 
     def _apply_card_style(self, accent_color=None, border_color=None, hover_color=None):
         """卡片：纯 surface + hover 时边框加深，状态色通过左上圆点表达。"""
@@ -426,14 +322,14 @@ class DownloadTaskWidget(QFrame):
         header_layout.addWidget(self.status_dot, 0, Qt.AlignVCenter)
 
         title_label = QLabel(self.task_name)
-        title_label.setFont(app_font(11, QFont.DemiBold))
+        title_label.setFont(app_font(FONT_BODY, QFont.DemiBold))
         title_label.setStyleSheet(f"color: {UI_TOKENS['text']}; background: transparent; border: none;")
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
 
         self.status_label = QLabel("准备中")
-        self.status_label.setFont(app_font(9, QFont.DemiBold))
+        self.status_label.setFont(app_font(FONT_CAPTION, QFont.DemiBold))
         self.status_label.setStyleSheet(
             f"color: {UI_TOKENS['primary']}; background: transparent; border: none;"
         )
@@ -448,7 +344,7 @@ class DownloadTaskWidget(QFrame):
             f"&nbsp;&nbsp;<span style='color:{UI_TOKENS['text_muted']};'>{url_display}</span>"
         )
         url_label.setTextFormat(Qt.RichText)
-        url_label.setFont(app_font(9))
+        url_label.setFont(app_font(FONT_CAPTION))
         url_label.setStyleSheet("background: transparent; border: none; padding: 0;")
         url_label.setWordWrap(True)
         layout.addWidget(url_label)
@@ -459,7 +355,7 @@ class DownloadTaskWidget(QFrame):
             f"&nbsp;&nbsp;<span style='color:{UI_TOKENS['text_muted']};'>{output_display}</span>"
         )
         output_label.setTextFormat(Qt.RichText)
-        output_label.setFont(app_font(9))
+        output_label.setFont(app_font(FONT_CAPTION))
         output_label.setStyleSheet("background: transparent; border: none; padding: 0;")
         output_label.setWordWrap(True)
         layout.addWidget(output_label)
@@ -471,16 +367,16 @@ class DownloadTaskWidget(QFrame):
         control_layout.setSpacing(8)
         control_layout.addStretch()
 
-        self.start_btn = ModernButton("开始", primary=True)
+        self.start_btn = ModernButton("开始", primary=True, icon_name="fa5s.play")
         self.start_btn.clicked.connect(self.start_download)
         control_layout.addWidget(self.start_btn)
 
-        self.stop_btn = ModernButton("暂停")
+        self.stop_btn = ModernButton("暂停", icon_name="fa5s.pause")
         self.stop_btn.clicked.connect(self.stop_download)
         self.stop_btn.setEnabled(False)
         control_layout.addWidget(self.stop_btn)
 
-        self.delete_btn = ModernButton("删除", variant='danger')
+        self.delete_btn = ModernButton("删除", variant='danger', icon_name="fa5s.trash")
         self.delete_btn.clicked.connect(self.delete_task)
         control_layout.addWidget(self.delete_btn)
 
@@ -735,9 +631,9 @@ class CustomMessageBox(QDialog):
         """)
 
         main_container = QWidget()
-        main_container.setObjectName("main_container")
+        main_container.setObjectName("dialog_card")
         main_container.setStyleSheet(f"""
-            QWidget#main_container {{
+            QWidget#dialog_card {{
                 background: {UI_TOKENS['surface']};
                 border: 1px solid {UI_TOKENS['border']};
                 border-radius: {radius_card}px;
@@ -745,8 +641,9 @@ class CustomMessageBox(QDialog):
         """)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.addWidget(main_container)
+        apply_drop_shadow(main_container)
 
         container_layout = QVBoxLayout(main_container)
         container_layout.setContentsMargins(20, 18, 20, 18)
@@ -757,7 +654,7 @@ class CustomMessageBox(QDialog):
         title_layout.setSpacing(10)
 
         badge_label = QLabel(type_labels.get(self.msg_type, "提示"))
-        badge_label.setFont(app_font(9, QFont.DemiBold))
+        badge_label.setFont(app_font(FONT_CAPTION, QFont.DemiBold))
         badge_label.setStyleSheet(f"""
             QLabel {{
                 color: {accent};
@@ -769,7 +666,7 @@ class CustomMessageBox(QDialog):
         """)
 
         title_label = QLabel(title if title else "提示")
-        title_label.setFont(app_font(13, QFont.DemiBold))
+        title_label.setFont(app_font(FONT_BODY, QFont.DemiBold))
         title_label.setStyleSheet(f"""
             QLabel {{
                 color: {UI_TOKENS['text']};
@@ -843,59 +740,11 @@ class CustomMessageBox(QDialog):
         button_layout.setSpacing(10)
 
         for i, button_text in enumerate(buttons):
-            btn = QPushButton()
-            btn.setText(button_text)
-            btn.setFont(app_font(10, QFont.DemiBold))
+            is_primary = i == len(buttons) - 1
+            btn = ModernButton(button_text, primary=is_primary)
             btn.setMinimumSize(96, 36)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.update()
-
-            if i == len(buttons) - 1:  # 主按钮
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background: {accent};
-                        color: #FFFFFF;
-                        border: 1px solid {accent};
-                        border-radius: {radius_control}px;
-                        padding: 8px 16px;
-                        min-width: 96px;
-                        min-height: 36px;
-                    }}
-                    QPushButton:hover {{
-                        background: {self._shade(accent, darker=True)};
-                        border-color: {self._shade(accent, darker=True)};
-                    }}
-                    QPushButton:pressed {{
-                        background: {self._shade(accent, darker=True)};
-                    }}
-                """)
-            else:  # 次要按钮
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background: {UI_TOKENS['surface']};
-                        color: {UI_TOKENS['text']};
-                        border: 1px solid {UI_TOKENS['border']};
-                        border-radius: {radius_control}px;
-                        padding: 8px 16px;
-                        min-width: 96px;
-                        min-height: 36px;
-                    }}
-                    QPushButton:hover {{
-                        background: {UI_TOKENS['surface_alt']};
-                        border-color: {UI_TOKENS['border_focus']};
-                    }}
-                    QPushButton:pressed {{
-                        background: {UI_TOKENS['surface_alt']};
-                    }}
-                """)
-
-            btn.clicked.connect(lambda checked, idx=i: self.button_clicked(idx))
-            btn.setText(button_text)
-            btn.repaint()
-
+            btn.clicked.connect(lambda checked=False, idx=i: self.button_clicked(idx))
             button_layout.addWidget(btn)
-            if i < len(buttons) - 1:
-                button_layout.addSpacing(6)
 
         container_layout.addLayout(button_layout)
 
@@ -1017,153 +866,41 @@ class SettingsDialog(QDialog):
         self.setFixedSize(780, 640)
         self.setModal(True)
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
-
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: transparent;
-            }}
-        """)
-
-        main_container = QWidget()
-        main_container.setObjectName("settings_container")
-        main_container.setStyleSheet(f"""
-            QWidget#settings_container {{
-                background: {UI_TOKENS['surface']};
-                border: 1px solid {UI_TOKENS['border']};
-                border-radius: {UI_TOKENS['radius_card']}px;
-                margin: 8px;
-            }}
-        """)
-
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.addWidget(main_container)
+        main_layout.setContentsMargins(24, 20, 24, 20)
+        main_layout.setSpacing(14)
 
-        container_layout = QVBoxLayout(main_container)
-        container_layout.setContentsMargins(24, 20, 24, 20)
-        container_layout.setSpacing(14)
-
-        # 标题栏
-        title_layout = QHBoxLayout()
-        title_label = QLabel("偏好设置")
-        title_label.setFont(app_font(16, QFont.DemiBold))
-        title_label.setStyleSheet(f"""
-            QLabel {{
-                color: {UI_TOKENS['text']};
-                padding: 2px 0;
-                background: transparent;
-                border: none;
-            }}
-        """)
-
-        close_btn = _make_close_button(self.reject)
-
-        title_layout.addWidget(title_label)
-        title_layout.addStretch()
-        title_layout.addWidget(close_btn)
-
-        container_layout.addLayout(title_layout)
-
-        # 创建标签页：底部下划线风格，无边框、无背景，更克制
+        # 创建标签页
         from PySide6.QtWidgets import QTabWidget
         tab_widget = QTabWidget()
         tab_widget.setDocumentMode(True)
         tab_widget.setUsesScrollButtons(False)
         tab_widget.tabBar().setElideMode(Qt.ElideNone)
         tab_widget.tabBar().setExpanding(False)
-        tab_widget.setStyleSheet(f"""
-            QTabWidget::pane {{
-                border: none;
-                border-top: 1px solid {UI_TOKENS['border']};
-                background: transparent;
-                margin-top: -1px;
-                padding-top: 12px;
-            }}
-            QTabBar {{
-                background: transparent;
-            }}
-            QTabBar::tab {{
-                background: transparent;
-                border: none;
-                border-bottom: 2px solid transparent;
-                padding: 10px 18px;
-                margin-right: 4px;
-                color: {UI_TOKENS['text_muted']};
-                min-width: 88px;
-            }}
-            QTabBar::tab:selected {{
-                color: {UI_TOKENS['primary']};
-                border-bottom-color: {UI_TOKENS['primary']};
-            }}
-            QTabBar::tab:hover {{
-                color: {UI_TOKENS['text']};
-            }}
-        """)
-        
-        # 网络设置标签
-        network_tab = self.create_network_tab()
-        tab_widget.addTab(network_tab, "网络设置")
-        
-        # 界面设置标签
-        ui_tab = self.create_ui_tab()
-        tab_widget.addTab(ui_tab, "界面设置")
-        
-        # 下载设置标签
-        download_tab = self.create_download_tab()
-        tab_widget.addTab(download_tab, "下载设置")
-        
-        # 高级设置标签
-        advanced_tab = self.create_advanced_tab()
-        tab_widget.addTab(advanced_tab, "高级设置")
-        
-        container_layout.addWidget(tab_widget)
-        
-        # 按钮区域
+
+        tab_widget.addTab(self.create_network_tab(), "网络设置")
+        tab_widget.addTab(self.create_ui_tab(), "界面设置")
+        tab_widget.addTab(self.create_download_tab(), "下载设置")
+        tab_widget.addTab(self.create_advanced_tab(), "高级设置")
+        main_layout.addWidget(tab_widget, 1)
+
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
         button_layout.addStretch()
-        
-        # 恢复默认按钮
-        reset_btn = QPushButton("恢复默认")
-        reset_btn.setFont(app_font(10, QFont.DemiBold))
+
+        reset_btn = ModernButton("恢复默认")
         reset_btn.setMinimumSize(112, 36)
-        reset_btn.setCursor(Qt.PointingHandCursor)
-        reset_btn.setStyleSheet(self._settings_secondary_button_style())
         reset_btn.clicked.connect(self.reset_to_default)
 
-        # 保存按钮
-        save_btn = QPushButton("保存并应用")
-        save_btn.setFont(app_font(10, QFont.DemiBold))
+        save_btn = ModernButton("保存并应用", primary=True)
         save_btn.setMinimumSize(112, 36)
-        save_btn.setCursor(Qt.PointingHandCursor)
-        save_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {UI_TOKENS['primary']};
-                color: #FFFFFF;
-                border: 1px solid {UI_TOKENS['primary']};
-                border-radius: {UI_TOKENS['radius_control']}px;
-                padding: 8px 16px;
-            }}
-            QPushButton:hover {{
-                background: {UI_TOKENS['primary_hover']};
-                border-color: {UI_TOKENS['primary_hover']};
-            }}
-            QPushButton:pressed {{
-                background: {UI_TOKENS['primary_active']};
-                border-color: {UI_TOKENS['primary_active']};
-            }}
-        """)
         save_btn.clicked.connect(self.save_settings)
-        
+
         button_layout.addWidget(reset_btn)
         button_layout.addWidget(save_btn)
-        
-        container_layout.addLayout(button_layout)
-        
-        # 居中显示
+        main_layout.addLayout(button_layout)
+
         self.center_on_screen()
-        
-        # 加载当前设置
         self.load_settings()
 
     def _settings_groupbox_style(self):
@@ -1933,90 +1670,45 @@ class SettingsDialog(QDialog):
         }
     
     def apply_theme(self):
-        """应用主题到设置对话框"""
+        """应用主题到设置对话框（原生窗口，只同步表面色）。"""
         theme = self.get_current_theme()
-        is_dark = theme.get('is_dark', False)
         surface = theme.get('groupbox_bg', UI_TOKENS['surface'])
         text = theme.get('text_color', UI_TOKENS['text'])
         border = theme.get('input_border', UI_TOKENS['border'])
         primary = theme.get('primary', UI_TOKENS['primary'])
-        overlay = 'rgba(15, 23, 42, 0.35)' if is_dark else 'rgba(15, 23, 42, 0.18)'
 
         self.setStyleSheet(f"""
             QDialog {{
-                background-color: {overlay};
+                background: {surface};
+                color: {text};
             }}
         """)
-
-        main_container = self.findChild(QWidget, "settings_container")
-        if main_container:
-            main_container.setStyleSheet(f"""
-                QWidget#settings_container {{
-                    background: {surface};
-                    border: 1px solid {border};
-                    border-radius: {UI_TOKENS['radius_card']}px;
-                    margin: 8px;
-                }}
-            """)
-
-        title_labels = self.findChildren(QLabel)
-        for label in title_labels:
-            if "偏好设置" in label.text():
-                label.setStyleSheet(f"""
-                    QLabel {{
-                        color: {text};
-                        padding: 2px 0;
-                        background: transparent;
-                        border: none;
-                    }}
-                """)
-                break
-
-        for btn in self.findChildren(QPushButton):
-            if btn.text() == "":
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background: transparent;
-                        color: {UI_TOKENS['text_muted']};
-                        border: 1px solid {border};
-                        border-radius: {UI_TOKENS['radius_tag']}px;
-                    }}
-                    QPushButton:hover {{
-                        background: {UI_TOKENS['surface_alt']};
-                        color: {text};
-                    }}
-                """)
-                break
 
         tab_widget = self.findChild(QTabWidget)
         if tab_widget:
             tab_widget.setStyleSheet(f"""
                 QTabWidget::pane {{
-                    border: 1px solid {border};
-                    border-radius: {UI_TOKENS['radius_card']}px;
-                    background: {surface};
-                    margin-top: 8px;
-                    top: -1px;
+                    border: none;
+                    border-top: 1px solid {border};
+                    background: transparent;
+                    margin-top: -1px;
+                    padding-top: 12px;
                 }}
                 QTabBar::tab {{
-                    background: {UI_TOKENS['surface_alt']};
-                    border: 1px solid {border};
-                    border-bottom: none;
-                    border-radius: {UI_TOKENS['radius_control']}px {UI_TOKENS['radius_control']}px 0 0;
-                    padding: 10px 16px;
+                    background: transparent;
+                    border: none;
+                    border-bottom: 2px solid transparent;
+                    padding: 10px 18px;
                     margin-right: 4px;
                     color: {UI_TOKENS['text_muted']};
-                    min-width: 96px;
+                    min-width: 88px;
                 }}
                 QTabBar::tab:selected {{
-                    background: {surface};
-                    border-color: {primary};
                     color: {primary};
-                    border-bottom: 2px solid {surface};
+                    border-bottom-color: {primary};
                 }}
-                QTabBar::tab:hover {{
-                    background: {surface};
-                    border-color: {UI_TOKENS['border_focus']};
+                QTabBar::tab:hover:!selected {{
+                    color: {text};
                 }}
             """)
 
@@ -2072,21 +1764,15 @@ class HeadersDialog(QDialog):
     
     def setup_ui(self):
         self.setWindowTitle("请求头配置")
-        self.setMinimumSize(600, 400)
-
-        self.setStyleSheet(f"""
-            QDialog {{
-                background: {UI_TOKENS['bg']};
-            }}
-        """)
+        self.setMinimumSize(600, 440)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
 
         info_label = QLabel("请输入自定义请求头（JSON 格式或每行一个键值对）")
-        info_label.setFont(app_font(10, QFont.DemiBold))
-        info_label.setStyleSheet(f"color: {UI_TOKENS['text']}; background: transparent; border: none;")
+        info_label.setFont(app_font(FONT_BODY, QFont.DemiBold))
+        info_label.setProperty("role", "form_label")
         layout.addWidget(info_label)
 
         example_text = '''示例格式：
@@ -2136,26 +1822,14 @@ origin: https://example.com'''
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
             parent=self
         )
-        button_box.setStyleSheet(f"""
-            QDialogButtonBox QPushButton {{
-                background: {UI_TOKENS['primary']};
-                color: #FFFFFF;
-                border: 1px solid {UI_TOKENS['primary']};
-                border-radius: {UI_TOKENS['radius_control']}px;
-                padding: 8px 16px;
-                min-width: 80px;
-                min-height: 32px;
-                margin: 2px;
-            }}
-            QDialogButtonBox QPushButton:hover {{
-                background: {UI_TOKENS['primary_hover']};
-                border-color: {UI_TOKENS['primary_hover']};
-            }}
-            QDialogButtonBox QPushButton:pressed {{
-                background: {UI_TOKENS['primary_active']};
-                border-color: {UI_TOKENS['primary_active']};
-            }}
-        """)
+        ok_btn = button_box.button(QDialogButtonBox.Ok)
+        cancel_btn = button_box.button(QDialogButtonBox.Cancel)
+        if ok_btn:
+            ok_btn.setText("确定")
+            ok_btn.setProperty("variant", "primary")
+            polish_widget(ok_btn)
+        if cancel_btn:
+            cancel_btn.setText("取消")
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
@@ -2386,25 +2060,11 @@ class M3u8SearchDialog(QDialog):
         """设置UI界面"""
         self.setWindowTitle("M3U8 搜索器")
         self.setMinimumSize(1100, 700)
-        self.setModal(False)  # 非模态对话框
-        
-        self.setStyleSheet(f"""
-            QDialog {{
-                background: {UI_TOKENS['bg']};
-            }}
-        """)
-        
-        # 主布局
+        self.setModal(False)
+
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
-        
-        # 标题
-        title_label = QLabel("M3U8 搜索器")
-        title_label.setFont(app_font(18, QFont.Bold))
-        title_label.setStyleSheet(f"color: {UI_TOKENS['text']}; padding: 4px 0;")
-        title_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(title_label)
+        main_layout.setContentsMargins(20, 16, 20, 16)
+        main_layout.setSpacing(14)
         
         # 搜索区域
         search_group = QGroupBox("搜索设置")
@@ -3596,6 +3256,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("M3U8 下载器 v1.0")
         self.setMinimumSize(1000, 720)
         self.resize(1100, 800)
+        # macOS 无边框会丢系统红绿灯且工具区易被样式吞掉；主窗用原生标题栏更稳
+        import platform
+        self._use_custom_chrome = platform.system() != "Darwin"
+        if self._use_custom_chrome:
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
 
         try:
             icon_path = resolve_app_icon()
@@ -3604,10 +3269,37 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"设置窗口图标失败: {e}")
 
+        shell = QWidget()
+        shell.setObjectName("main_shell")
+        self.setCentralWidget(shell)
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+
+        self.title_bar = None
+        if self._use_custom_chrome:
+            self.title_bar = TitleBar(self, title="M3U8 下载器")
+            self.title_bar.minimize_requested.connect(self.showMinimized)
+            self.title_bar.maximize_requested.connect(self._toggle_maximize)
+            self.title_bar.close_requested.connect(self.close)
+            self.title_bar.set_menu_actions([
+                ("打开下载目录", self.open_download_folder),
+                ("偏好设置", self.show_settings),
+                None,
+                ("请求头配置", self.show_headers_dialog),
+                ("片源搜索", self.show_m3u8_search_dialog),
+                None,
+                ("关于", self.show_about),
+                ("打开 GitHub 仓库", self.open_github_repo),
+                None,
+                ("退出", self.close),
+            ])
+            shell_layout.addWidget(self.title_bar)
+
         central_widget = QWidget()
         central_widget.setObjectName("main_surface")
-        self.setCentralWidget(central_widget)
         self._main_surface = central_widget
+        shell_layout.addWidget(central_widget, 1)
 
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(24, 20, 24, 20)
@@ -3619,33 +3311,50 @@ class MainWindow(QMainWindow):
         top_bar_layout.setContentsMargins(0, 0, 0, 12)
         top_bar_layout.setSpacing(12)
 
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(12)
+
+        self.brand_icon = QLabel()
+        self.brand_icon.setFixedSize(40, 40)
+        self.brand_icon.setAlignment(Qt.AlignCenter)
+        icon_path = resolve_app_icon()
+        if icon_path:
+            pix = QPixmap(icon_path).scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.brand_icon.setPixmap(pix)
+        else:
+            self.brand_icon.setPixmap(qta_icon("fa5s.play-circle", color=UI_TOKENS['primary']).pixmap(32, 32))
+        brand_row.addWidget(self.brand_icon, 0, Qt.AlignVCenter)
+
         brand_text_layout = QVBoxLayout()
         brand_text_layout.setContentsMargins(0, 0, 0, 0)
         brand_text_layout.setSpacing(2)
 
         self.app_title = QLabel("M3U8 下载器")
-        self.app_title.setFont(app_font(18, QFont.DemiBold))
+        self.app_title.setProperty("role", "title")
+        self.app_title.setFont(app_font(FONT_TITLE, QFont.DemiBold))
         brand_text_layout.addWidget(self.app_title)
 
         self.app_subtitle = QLabel("轻量、稳定的视频抓取与合并工作台")
-        self.app_subtitle.setFont(app_font(9))
+        self.app_subtitle.setProperty("role", "subtitle")
+        self.app_subtitle.setFont(app_font(FONT_CAPTION))
         brand_text_layout.addWidget(self.app_subtitle)
-        top_bar_layout.addLayout(brand_text_layout)
+        brand_row.addLayout(brand_text_layout)
+        top_bar_layout.addLayout(brand_row)
         top_bar_layout.addStretch()
 
-        search_btn = ModernButton("搜索")
+        search_btn = ModernButton("搜索", icon_name="fa5s.search")
         search_btn.clicked.connect(self.show_m3u8_search_dialog)
         top_bar_layout.addWidget(search_btn)
 
-        headers_top_btn = ModernButton("请求头")
+        headers_top_btn = ModernButton("请求头", icon_name="fa5s.code")
         headers_top_btn.clicked.connect(self.show_headers_dialog)
         top_bar_layout.addWidget(headers_top_btn)
 
-        folder_btn = ModernButton("下载目录")
+        folder_btn = ModernButton("下载目录", icon_name="fa5s.folder-open")
         folder_btn.clicked.connect(self.open_download_folder)
         top_bar_layout.addWidget(folder_btn)
 
-        settings_btn = ModernButton("设置")
+        settings_btn = ModernButton("设置", icon_name="fa5s.cog")
         settings_btn.clicked.connect(self.show_settings)
         top_bar_layout.addWidget(settings_btn)
 
@@ -3655,22 +3364,46 @@ class MainWindow(QMainWindow):
         workspace.setObjectName("workspace")
         workspace_layout = QHBoxLayout(workspace)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
-        workspace_layout.setSpacing(14)
+        workspace_layout.setSpacing(16)
 
         self.compose_card = QFrame()
         self.compose_card.setObjectName("compose_card")
         self.compose_card.setMinimumWidth(360)
         self.compose_card.setMaximumWidth(420)
-        compose_layout = QVBoxLayout(self.compose_card)
-        compose_layout.setContentsMargins(22, 20, 22, 22)
-        compose_layout.setSpacing(11)
+        compose_outer = QVBoxLayout(self.compose_card)
+        compose_outer.setContentsMargins(0, 0, 0, 0)
+        compose_outer.setSpacing(0)
+
+        compose_scroll = QScrollArea()
+        compose_scroll.setObjectName("compose_scroll")
+        compose_scroll.setWidgetResizable(True)
+        compose_scroll.setFrameShape(QFrame.NoFrame)
+        compose_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        compose_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        compose_scroll.setStyleSheet("""
+            QScrollArea#compose_scroll {
+                background: transparent;
+                border: none;
+            }
+            QScrollArea#compose_scroll > QWidget > QWidget {
+                background: transparent;
+            }
+        """)
+
+        compose_form = QWidget()
+        compose_form.setObjectName("compose_form")
+        compose_layout = QVBoxLayout(compose_form)
+        compose_layout.setContentsMargins(20, 20, 20, 12)
+        compose_layout.setSpacing(12)
 
         self.compose_title = QLabel("新建下载")
-        self.compose_title.setFont(app_font(18, QFont.DemiBold))
+        self.compose_title.setProperty("role", "title")
+        self.compose_title.setFont(app_font(FONT_TITLE, QFont.DemiBold))
         compose_layout.addWidget(self.compose_title)
 
         self.compose_desc = QLabel("填写链接与保存位置，加入后自动排队。")
-        self.compose_desc.setFont(app_font(9))
+        self.compose_desc.setProperty("role", "subtitle")
+        self.compose_desc.setFont(app_font(FONT_CAPTION))
         self.compose_desc.setWordWrap(True)
         compose_layout.addWidget(self.compose_desc)
 
@@ -3682,7 +3415,6 @@ class MainWindow(QMainWindow):
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["单个链接", "批量链接"])
         self.mode_combo.setMinimumHeight(40)
-        self.mode_combo.setStyleSheet(self._control_combo_style())
         self.mode_combo.currentTextChanged.connect(self.on_mode_changed)
         compose_layout.addWidget(self.mode_combo)
 
@@ -3697,7 +3429,6 @@ class MainWindow(QMainWindow):
         self.batch_url_input.setPlaceholderText("每行一个 M3U8 链接")
         self.batch_url_input.setMinimumHeight(120)
         self.batch_url_input.setMaximumHeight(180)
-        self.batch_url_input.setStyleSheet(self._text_edit_style())
         self.batch_url_input.setVisible(False)
         compose_layout.addWidget(self.batch_url_input)
 
@@ -3722,14 +3453,9 @@ class MainWindow(QMainWindow):
         self.task_name_input.returnPressed.connect(self.add_download_task)
         compose_layout.addWidget(self.task_name_input)
 
-        performance_row = QHBoxLayout()
-        performance_row.setSpacing(10)
-
-        threads_field = QVBoxLayout()
-        threads_field.setSpacing(5)
+        # 并发参数：与其它表单项同级，各占一行，避免并排挤扁
         self.threads_label = self._create_form_label("单视频线程")
-        threads_field.addWidget(self.threads_label)
-
+        compose_layout.addWidget(self.threads_label)
         self.threads_spin = self._create_number_input(
             1,
             32,
@@ -3737,14 +3463,10 @@ class MainWindow(QMainWindow):
             "一个视频同时下载的分片数。",
         )
         self.threads_spin.setAccessibleName("单任务线程")
-        threads_field.addWidget(self.threads_spin)
-        performance_row.addLayout(threads_field, 1)
+        compose_layout.addWidget(self.threads_spin)
 
-        concurrent_field = QVBoxLayout()
-        concurrent_field.setSpacing(5)
         self.concurrent_label = self._create_form_label("同时下载")
-        concurrent_field.addWidget(self.concurrent_label)
-
+        compose_layout.addWidget(self.concurrent_label)
         self.concurrent_spin = self._create_number_input(
             1,
             20,
@@ -3752,35 +3474,38 @@ class MainWindow(QMainWindow):
             "队列中同时运行的下载任务数。",
         )
         self.concurrent_spin.setAccessibleName("同时任务")
-        concurrent_field.addWidget(self.concurrent_spin)
-        performance_row.addLayout(concurrent_field, 1)
+        compose_layout.addWidget(self.concurrent_spin)
 
-        self.performance_panel = QFrame()
-        self.performance_panel.setObjectName("performance_panel")
-        performance_panel_layout = QVBoxLayout(self.performance_panel)
-        performance_panel_layout.setContentsMargins(12, 10, 12, 10)
-        performance_panel_layout.setSpacing(0)
-        performance_panel_layout.addLayout(performance_row)
-        compose_layout.addWidget(self.performance_panel)
+        # 兼容旧引用：不再使用嵌套灰底 performance_panel
+        self.performance_panel = None
 
         template_label = self._create_form_label("请求头模板")
         compose_layout.addWidget(template_label)
         self.template_combo = self._create_template_combo()
         compose_layout.addWidget(self.template_combo)
 
-        compose_layout.addStretch()
+        compose_layout.addStretch(1)
 
+        compose_scroll.setWidget(compose_form)
+        compose_outer.addWidget(compose_scroll, 1)
+
+        # 主按钮固定在卡片底部，不随表单滚走
+        footer = QWidget()
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(20, 8, 20, 20)
+        footer_layout.setSpacing(0)
         self.add_task_btn = ModernButton("加入下载队列", primary=True)
         self.add_task_btn.setMinimumHeight(44)
         self.add_task_btn.clicked.connect(self.add_download_task)
-        compose_layout.addWidget(self.add_task_btn)
+        footer_layout.addWidget(self.add_task_btn)
+        compose_outer.addWidget(footer, 0)
 
         workspace_layout.addWidget(self.compose_card, 0)
 
         self.queue_section = QFrame()
         self.queue_section.setObjectName("queue_section")
         queue_layout = QVBoxLayout(self.queue_section)
-        queue_layout.setContentsMargins(12, 12, 12, 12)
+        queue_layout.setContentsMargins(16, 16, 16, 16)
         queue_layout.setSpacing(0)
 
         self.right_tabs = QTabWidget()
@@ -3799,10 +3524,12 @@ class MainWindow(QMainWindow):
         queue_title_layout = QVBoxLayout()
         queue_title_layout.setSpacing(0)
         self.queue_title = QLabel("下载队列")
-        self.queue_title.setFont(app_font(16, QFont.DemiBold))
+        self.queue_title.setProperty("role", "title")
+        self.queue_title.setFont(app_font(FONT_TITLE - 2, QFont.DemiBold))
         queue_title_layout.addWidget(self.queue_title)
         self.queue_desc = QLabel("任务状态和整体进度")
-        self.queue_desc.setFont(app_font(9))
+        self.queue_desc.setProperty("role", "subtitle")
+        self.queue_desc.setFont(app_font(FONT_CAPTION))
         queue_title_layout.addWidget(self.queue_desc)
         queue_header.addLayout(queue_title_layout)
         queue_header.addStretch()
@@ -3837,7 +3564,6 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setStyleSheet(self._scroll_area_style())
 
         self.task_container = QWidget()
         self.task_container.setObjectName("task_container")
@@ -3861,10 +3587,12 @@ class MainWindow(QMainWindow):
         log_title_layout = QVBoxLayout()
         log_title_layout.setSpacing(0)
         self.log_panel_title = QLabel("实时日志")
-        self.log_panel_title.setFont(app_font(16, QFont.DemiBold))
+        self.log_panel_title.setProperty("role", "title")
+        self.log_panel_title.setFont(app_font(FONT_TITLE - 2, QFont.DemiBold))
         log_title_layout.addWidget(self.log_panel_title)
         self.log_panel_desc = QLabel("下载与搜索过程输出")
-        self.log_panel_desc.setFont(app_font(9))
+        self.log_panel_desc.setProperty("role", "subtitle")
+        self.log_panel_desc.setFont(app_font(FONT_CAPTION))
         log_title_layout.addWidget(self.log_panel_desc)
         log_header.addLayout(log_title_layout)
         log_header.addStretch()
@@ -3878,7 +3606,7 @@ class MainWindow(QMainWindow):
         self.main_log_text.setReadOnly(True)
         self.main_log_text.setPlaceholderText("下载、搜索、过盾等过程日志会显示在这里...")
         self.main_log_text.setStyleSheet(
-            log_console_stylesheet(border=UI_TOKENS['border'], radius=UI_TOKENS['radius_card'])
+            log_console_stylesheet(border=UI_TOKENS['border'], radius=UI_TOKENS['radius'])
         )
         log_tab_layout.addWidget(self.main_log_text, 1)
 
@@ -3889,17 +3617,41 @@ class MainWindow(QMainWindow):
         workspace_layout.addWidget(self.queue_section, 1)
         main_layout.addWidget(workspace, 1)
 
+        if self._use_custom_chrome:
+            grip_row = QHBoxLayout()
+            grip_row.setContentsMargins(0, 0, 0, 0)
+            grip_row.addStretch(1)
+            self._size_grip = QSizeGrip(central_widget)
+            grip_row.addWidget(self._size_grip, 0, Qt.AlignBottom | Qt.AlignRight)
+            main_layout.addLayout(grip_row)
+
+        apply_drop_shadow(self.compose_card)
+        apply_drop_shadow(self.queue_section)
+
         self.statusBar().showMessage("准备就绪")
-        self.setup_menu()
+        if self._use_custom_chrome:
+            self.menuBar().setVisible(False)
+        else:
+            self.setup_menu()
         self._apply_dashboard_accents(get_theme(0))
         if not self.download_tasks:
             QTimer.singleShot(0, self._start_empty_state_animation)
+
+    def _toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            if self.title_bar:
+                self.title_bar.set_maximized_state(False)
+        else:
+            self.showMaximized()
+            if self.title_bar:
+                self.title_bar.set_maximized_state(True)
 
     def _create_form_label(self, text):
         """创建左侧任务表单的小标签。"""
         label = QLabel(text)
         label.setProperty("role", "form_label")
-        label.setFont(app_font(9, QFont.DemiBold))
+        label.setFont(app_font(FONT_CAPTION, QFont.DemiBold))
         return label
 
     def _control_combo_style(self):
@@ -3997,176 +3749,62 @@ class MainWindow(QMainWindow):
         """
 
     def _apply_dashboard_accents(self, theme):
-        """将当前主题的强调色应用到主工作台。极简 solid + 底部分割线，无渐变。"""
-        primary = theme.get('primary', UI_TOKENS['primary'])
-        primary_hover = theme.get('secondary', UI_TOKENS['primary_hover'])
-        surface = theme.get('groupbox_bg', UI_TOKENS['surface'])
-        border = theme.get('input_border', UI_TOKENS['border'])
-        text = theme.get('text_color', UI_TOKENS['text'])
-        is_dark = theme.get('is_dark', False)
-        muted_text = '#94A3B8' if is_dark else UI_TOKENS['text_muted']
-        subtle_text = '#64748B' if is_dark else UI_TOKENS['text_subtle']
-        radius_card = UI_TOKENS['radius_card']
-        radius_control = UI_TOKENS['radius_control']
+        """主题切换后刷新依赖当前强调色的少量动态控件。"""
+        tokens = getattr(self, "current_tokens", None) or merge_theme_tokens(0)
+        primary = tokens.get("primary", UI_TOKENS["primary"])
+        border = tokens.get("border", UI_TOKENS["border"])
+        radius = tokens.get("radius", UI_TOKENS["radius"])
 
-        # 顶栏：底部单条细分割线，无背景色差
-        if hasattr(self, 'top_bar'):
-            self.top_bar.setStyleSheet(f"""
-                QFrame#top_bar {{
-                    background: transparent;
-                    border: none;
-                    border-bottom: 1px solid {border};
-                }}
-            """)
-        # 新建下载卡片：solid surface，去左侧色条
-        if hasattr(self, 'compose_card'):
-            self.compose_card.setStyleSheet(f"""
-                QFrame#compose_card {{
-                    background: {surface};
-                    border: 1px solid {border};
-                    border-radius: {radius_card}px;
-                }}
-            """)
-        # 队列区容器
-        if hasattr(self, 'queue_section'):
-            self.queue_section.setStyleSheet(f"""
-                QFrame#queue_section {{
-                    background: {surface};
-                    border: 1px solid {border};
-                    border-radius: {radius_card}px;
-                }}
-            """)
-        if hasattr(self, 'right_tabs'):
-            tab_bg = UI_TOKENS['surface_alt']
-            self.right_tabs.setStyleSheet(f"""
-                QTabWidget#right_tabs::pane {{
-                    border: none;
-                    background: transparent;
-                    top: -1px;
-                }}
-                QTabWidget#right_tabs > QTabBar::tab {{
-                    background: transparent;
-                    color: {muted_text};
-                    border: none;
-                    border-bottom: 2px solid transparent;
-                    padding: 8px 16px;
-                    margin-right: 4px;
-                    font-size: 13px;
-                }}
-                QTabWidget#right_tabs > QTabBar::tab:selected {{
-                    color: {primary};
-                    border-bottom: 2px solid {primary};
-                    font-weight: 600;
-                }}
-                QTabWidget#right_tabs > QTabBar::tab:hover:!selected {{
-                    color: {text};
-                    background: {tab_bg};
-                    border-radius: 6px 6px 0 0;
-                }}
-            """)
-        if hasattr(self, 'app_title'):
-            self.app_title.setStyleSheet(f"color: {text}; background: transparent;")
-        if hasattr(self, 'app_subtitle'):
-            self.app_subtitle.setStyleSheet(f"color: {muted_text}; background: transparent;")
-        if hasattr(self, 'compose_title'):
-            self.compose_title.setStyleSheet(f"color: {text}; background: transparent;")
-        if hasattr(self, 'compose_desc'):
-            self.compose_desc.setStyleSheet(f"color: {muted_text}; background: transparent;")
-        if hasattr(self, 'queue_title'):
-            self.queue_title.setStyleSheet(f"color: {text}; background: transparent;")
-        if hasattr(self, 'queue_desc'):
-            self.queue_desc.setStyleSheet(f"color: {subtle_text}; background: transparent;")
-        if hasattr(self, 'log_panel_title'):
-            self.log_panel_title.setStyleSheet(f"color: {text}; background: transparent;")
-        if hasattr(self, 'log_panel_desc'):
-            self.log_panel_desc.setStyleSheet(f"color: {subtle_text}; background: transparent;")
-        if hasattr(self, 'main_log_text'):
+        if hasattr(self, "main_log_text"):
             self.main_log_text.setStyleSheet(
-                log_console_stylesheet(border=border, radius=radius_card)
+                log_console_stylesheet(border=border, radius=radius)
             )
-        if hasattr(self, 'performance_panel'):
-            # 表单里的性能面板：更克制的浅底
-            self.performance_panel.setStyleSheet(f"""
-                QFrame#performance_panel {{
-                    background: {UI_TOKENS['surface_alt']};
-                    border: 1px solid {border};
-                    border-radius: {radius_control}px;
-                }}
-            """)
-        if hasattr(self, 'threads_label'):
-            self.threads_label.setStyleSheet(f"color: {muted_text}; background: transparent;")
-        if hasattr(self, 'concurrent_label'):
-            self.concurrent_label.setStyleSheet(f"color: {muted_text}; background: transparent;")
-        if hasattr(self, 'empty_state_card'):
-            # 去掉 100px 硬编码 margin：让 QVBoxLayout 自然管理
-            self.empty_state_card.setStyleSheet(f"""
-                QFrame#empty_state_card {{
-                    background: transparent;
-                    border: none;
-                }}
-            """)
-        if hasattr(self, 'empty_state_title'):
-            self.empty_state_title.setStyleSheet(f"color: {text}; background: transparent;")
-        if hasattr(self, 'empty_state_desc'):
-            self.empty_state_desc.setStyleSheet(f"color: {muted_text}; background: transparent;")
-        if hasattr(self, 'empty_state_hint'):
-            self.empty_state_hint.setStyleSheet(f"color: {subtle_text}; background: transparent;")
-        if hasattr(self, 'scroll_area'):
-            self.scroll_area.setStyleSheet(
-                self._scroll_area_style(UI_TOKENS['surface_alt'], border)
+        if hasattr(self, "empty_state_icon"):
+            soft = tokens.get('primary_soft', UI_TOKENS['primary_soft'])
+            if getattr(self, "empty_state_icon_wrap", None):
+                self.empty_state_icon_wrap.setStyleSheet(
+                    f"background: {soft}; border-radius: 28px; border: none;"
+                )
+            self.empty_state_icon.clear()
+            self.empty_state_icon.setPixmap(
+                qta_icon("fa5s.download", color=primary).pixmap(28, 28)
             )
-        if hasattr(self, 'overall_progress'):
-            self.overall_progress.setStyleSheet(f"""
-                QProgressBar {{
-                    border: none;
-                    border-radius: {UI_TOKENS['radius_progress']}px;
-                    background: {UI_TOKENS['surface_alt']};
-                }}
-                QProgressBar::chunk {{
-                    border-radius: {UI_TOKENS['radius_progress']}px;
-                    background: {primary};
-                }}
-            """)
-        if hasattr(self, 'add_task_btn'):
-            # 主 CTA：solid + hover 一档深色，去渐变
-            self.add_task_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: {primary};
-                    color: #FFFFFF;
-                    border: 1px solid {primary};
-                    border-radius: {radius_control}px;
-                    padding: 10px 18px;
-                    font-weight: 600;
-                }}
-                QPushButton:hover {{
-                    background: {primary_hover};
-                    border-color: {primary_hover};
-                }}
-                QPushButton:pressed {{
-                    background: {UI_TOKENS['primary_active']};
-                    border-color: {UI_TOKENS['primary_active']};
-                }}
-                QPushButton:disabled {{
-                    background: {UI_TOKENS['surface_alt']};
-                    color: {UI_TOKENS['text_muted']};
-                    border-color: {border};
-                }}
-            """)
+        if getattr(self, "title_bar", None):
+            self.title_bar.refresh_icons(tokens)
+            self.title_bar.set_maximized_state(self.isMaximized())
+
+        # 重新挂阴影，避免主题切换后 effect 丢失层次
+        if hasattr(self, "compose_card"):
+            apply_drop_shadow(self.compose_card)
+        if hasattr(self, "queue_section"):
+            apply_drop_shadow(self.queue_section)
+
         self._active_pill_color = primary
-        if hasattr(self, 'active_downloads_label'):
+        if hasattr(self, "active_downloads_label"):
             self._apply_overview_pill_style(
                 self.active_downloads_label,
                 primary,
                 bright=self._active_pulse_bright and self._active_pulse_timer.isActive(),
             )
+        # 刷新统计 pill 颜色
+        for label, key in (
+            (getattr(self, "total_tasks_label", None), "primary"),
+            (getattr(self, "waiting_tasks_label", None), "warning"),
+            (getattr(self, "completed_tasks_label", None), "success"),
+            (getattr(self, "failed_tasks_label", None), "danger"),
+        ):
+            if label is not None:
+                color = tokens.get(key, UI_TOKENS.get(key, primary))
+                label.setProperty("pill_color", color)
+                self._apply_overview_pill_style(label, color)
 
     def _create_field_label(self, text):
         """创建表单字段标签"""
         label = QLabel(text)
-        label.setFont(app_font(10, QFont.DemiBold))
+        label.setFont(app_font(FONT_CAPTION, QFont.DemiBold))
         label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         label.setMinimumWidth(82)
-        label.setStyleSheet(f"color: {UI_TOKENS['text_muted']}; padding-right: 6px;")
+        label.setProperty("role", "form_label")
         return label
 
     def _create_number_input(self, minimum, maximum, value, tooltip):
@@ -4175,44 +3813,10 @@ class MainWindow(QMainWindow):
         spin_box.setRange(minimum, maximum)
         spin_box.setValue(value)
         spin_box.setMinimumHeight(40)
-        spin_box.setMinimumWidth(72)
+        spin_box.setMaximumHeight(40)
+        spin_box.setButtonSymbols(QSpinBox.UpDownArrows)
+        spin_box.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         spin_box.setToolTip(tooltip)
-        spin_box.setStyleSheet(f"""
-            QSpinBox {{
-                border: 1px solid {UI_TOKENS['border']};
-                border-radius: {UI_TOKENS['radius_control']}px;
-                padding: 8px 10px;
-                background: {UI_TOKENS['surface']};
-                color: {UI_TOKENS['text']};
-            }}
-            QSpinBox:focus {{
-                border-color: {UI_TOKENS['primary']};
-            }}
-            QSpinBox:hover {{
-                border-color: {UI_TOKENS['border_focus']};
-            }}
-            QSpinBox::up-button, QSpinBox::down-button {{
-                width: 18px;
-                border: none;
-                background: transparent;
-            }}
-            QSpinBox::up-arrow {{
-                image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-bottom: 5px solid {UI_TOKENS['primary']};
-                width: 0px;
-                height: 0px;
-            }}
-            QSpinBox::down-arrow {{
-                image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid {UI_TOKENS['primary']};
-                width: 0px;
-                height: 0px;
-            }}
-        """)
         return spin_box
 
     def _create_quick_action_button(self, text, slot, emphasis=False):
@@ -4287,31 +3891,41 @@ class MainWindow(QMainWindow):
         wrapper.setSpacing(10)
         wrapper.addStretch(1)
 
+        self.empty_state_icon_wrap = QFrame()
+        self.empty_state_icon_wrap.setFixedSize(56, 56)
+        self.empty_state_icon_wrap.setStyleSheet(
+            f"background: {UI_TOKENS['primary_soft']}; border-radius: 28px; border: none;"
+        )
+        icon_wrap_layout = QHBoxLayout(self.empty_state_icon_wrap)
+        icon_wrap_layout.setContentsMargins(0, 0, 0, 0)
+        icon_wrap_layout.setAlignment(Qt.AlignCenter)
+
         self.empty_state_icon = QLabel()
         self.empty_state_icon.setAlignment(Qt.AlignCenter)
-        self.empty_state_icon.setFixedSize(56, 56)
-        self.empty_state_icon.setStyleSheet(
-            f"background: {UI_TOKENS['primary_soft']};"
-            f" border-radius: 28px;"
-            f" border: none;"
+        self.empty_state_icon.setStyleSheet("background: transparent; border: none;")
+        self.empty_state_icon.setPixmap(
+            qta_icon("fa5s.download", color=UI_TOKENS['primary']).pixmap(28, 28)
         )
-        wrapper.addWidget(self.empty_state_icon, 0, Qt.AlignHCenter)
+        icon_wrap_layout.addWidget(self.empty_state_icon)
+        wrapper.addWidget(self.empty_state_icon_wrap, 0, Qt.AlignHCenter)
 
         wrapper.addSpacing(4)
 
         self.empty_state_title = QLabel("还没有下载任务")
         self.empty_state_title.setAlignment(Qt.AlignCenter)
-        self.empty_state_title.setFont(app_font(14, QFont.DemiBold))
+        self.empty_state_title.setFont(app_font(FONT_BODY, QFont.DemiBold))
         wrapper.addWidget(self.empty_state_title)
 
         self.empty_state_desc = QLabel("在左侧粘贴 M3U8 链接，选择保存位置后加入队列。")
         self.empty_state_desc.setAlignment(Qt.AlignCenter)
         self.empty_state_desc.setWordWrap(True)
+        self.empty_state_desc.setProperty("role", "muted")
         wrapper.addWidget(self.empty_state_desc)
 
         self.empty_state_hint = QLabel("支持批量链接与自定义请求头")
         self.empty_state_hint.setAlignment(Qt.AlignCenter)
-        self.empty_state_hint.setFont(app_font(9))
+        self.empty_state_hint.setFont(app_font(FONT_CAPTION))
+        self.empty_state_hint.setProperty("role", "muted")
         wrapper.addWidget(self.empty_state_hint)
 
         wrapper.addSpacing(4)
@@ -5071,151 +4685,20 @@ github.com/shayuaidoudou/m3u8-downloader"""
         )
     
     def apply_theme(self, theme_index):
-        """应用主题颜色"""
+        """一次性重建全局 stylesheet，并刷新工作台动态强调色。"""
         theme = get_theme(theme_index)
         self.current_theme_data = theme.copy()
-
-        primary = theme.get('primary', UI_TOKENS['primary'])
-        bg = theme.get('bg_start', UI_TOKENS['bg'])
-        surface = theme.get('groupbox_bg', UI_TOKENS['surface'])
-        text = theme.get('text_color', UI_TOKENS['text'])
-        border = theme.get('input_border', UI_TOKENS['border'])
-        input_bg = theme.get('input_bg', UI_TOKENS['surface'])
-        radius_card = UI_TOKENS['radius_card']
-        radius_control = UI_TOKENS['radius_control']
-
-        self.setStyleSheet(f"""
-            QMainWindow {{
-                background: {bg};
-            }}
-            QWidget#top_bar {{
-                background: transparent;
-                border: none;
-            }}
-            QFrame#compose_card {{
-                background: {surface};
-                border: 1px solid {border};
-                border-radius: {radius_card}px;
-            }}
-            QFrame#queue_section {{
-                background: transparent;
-                border: none;
-            }}
-            QLabel {{
-                color: {text};
-            }}
-            QLineEdit {{
-                background: {input_bg};
-                border: 1px solid {border};
-                border-radius: {radius_control}px;
-                padding: 8px 12px;
-                color: {text};
-            }}
-            QLineEdit:focus {{
-                border-color: {primary};
-            }}
-            QTextEdit, QPlainTextEdit {{
-                background: {input_bg};
-                border: 1px solid {border};
-                border-radius: {radius_control}px;
-                padding: 8px 12px;
-                color: {text};
-            }}
-            QTextEdit:focus, QPlainTextEdit:focus {{
-                border-color: {primary};
-            }}
-            QComboBox {{
-                background: {input_bg};
-                border: 1px solid {border};
-                border-radius: {radius_control}px;
-                padding: 8px 12px;
-                color: {text};
-            }}
-            QComboBox:focus {{
-                border-color: {primary};
-            }}
-            QComboBox::down-arrow {{
-                border-top-color: {primary};
-            }}
-            QSpinBox {{
-                background: {input_bg};
-                border: 1px solid {border};
-                border-radius: {radius_control}px;
-                padding: 8px 10px;
-                color: {text};
-            }}
-            QSpinBox:focus {{
-                border-color: {primary};
-            }}
-            QSpinBox::up-arrow {{
-                border-bottom-color: {primary};
-            }}
-            QSpinBox::down-arrow {{
-                border-top-color: {primary};
-            }}
-            QStatusBar {{
-                background: {surface};
-                border-top: 1px solid {border};
-                color: {text};
-                padding: 6px 10px;
-            }}
-            QMenuBar {{
-                background: {surface};
-                border-bottom: 1px solid {border};
-                padding: 4px;
-            }}
-            QMenuBar::item {{
-                padding: 6px 12px;
-                border-radius: {radius_control}px;
-                color: {text};
-            }}
-            QMenuBar::item:selected {{
-                background: {UI_TOKENS['surface_alt']};
-                color: {primary};
-            }}
-            QMenu {{
-                background: {surface};
-                border: 1px solid {border};
-                border-radius: {radius_control}px;
-                padding: 4px;
-            }}
-            QMenu::item {{
-                padding: 8px 14px;
-                border-radius: {radius_control}px;
-                color: {text};
-            }}
-            QMenu::item:selected {{
-                background: {UI_TOKENS['surface_alt']};
-                color: {primary};
-            }}
-            QScrollBar:vertical {{
-                background: {UI_TOKENS['surface_alt']};
-                width: 8px;
-                border-radius: {UI_TOKENS['radius_progress']}px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {border};
-                border-radius: {UI_TOKENS['radius_progress']}px;
-                min-height: 24px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {primary};
-            }}
-            QProgressBar {{
-                border: none;
-                border-radius: {UI_TOKENS['radius_progress']}px;
-                background: {UI_TOKENS['surface_alt']};
-            }}
-            QProgressBar::chunk {{
-                border-radius: {UI_TOKENS['radius_progress']}px;
-                background: {primary};
-            }}
-        """)
-
+        tokens = apply_app_theme(theme_index)
+        self.current_tokens = tokens
+        # 同步模块级 UI_TOKENS 引用的可变字段，供任务卡片等即时读取
+        for key, value in tokens.items():
+            if key in UI_TOKENS or key in ("is_dark",):
+                UI_TOKENS[key] = value
         self._apply_dashboard_accents(theme)
         print(f"已应用主题: {theme_index} - {get_theme_name(theme_index)}")
-    
+
     def _theme_hex_to_rgb(self, hex_color):
+
         """将十六进制颜色转换为RGB（用于主题）"""
         hex_color = hex_color.lstrip('#')
         return ', '.join(str(int(hex_color[i:i+2], 16)) for i in (0, 2, 4))
@@ -5395,11 +4878,12 @@ github.com/shayuaidoudou/m3u8-downloader"""
 
     def _start_empty_state_animation(self):
         """空状态图标呼吸动画"""
-        if self._empty_anim_running or not hasattr(self, 'empty_state_icon'):
+        target = getattr(self, 'empty_state_icon_wrap', None) or getattr(self, 'empty_state_icon', None)
+        if self._empty_anim_running or target is None:
             return
-        effect = QGraphicsOpacityEffect(self.empty_state_icon)
+        effect = QGraphicsOpacityEffect(target)
         effect.setOpacity(1.0)
-        self.empty_state_icon.setGraphicsEffect(effect)
+        target.setGraphicsEffect(effect)
         anim = QPropertyAnimation(effect, b"opacity", self)
         anim.setDuration(1400)
         anim.setStartValue(0.55)
@@ -5417,8 +4901,9 @@ github.com/shayuaidoudou/m3u8-downloader"""
         if self._empty_anim is not None:
             self._empty_anim.stop()
             self._empty_anim = None
-        if hasattr(self, 'empty_state_icon'):
-            self.empty_state_icon.setGraphicsEffect(None)
+        target = getattr(self, 'empty_state_icon_wrap', None) or getattr(self, 'empty_state_icon', None)
+        if target is not None:
+            target.setGraphicsEffect(None)
         self._empty_anim_running = False
 
     def showEvent(self, event):
@@ -5446,112 +4931,6 @@ github.com/shayuaidoudou/m3u8-downloader"""
         self._entrance_anim = anim
 
 
-GLOBAL_STYLESHEET = f"""
-    QWidget {{
-        background-color: {UI_TOKENS['bg']};
-        color: {UI_TOKENS['text']};
-    }}
-    QMenuBar {{
-        background: {UI_TOKENS['bg']};
-        color: {UI_TOKENS['text']};
-        border-bottom: 1px solid {UI_TOKENS['border']};
-        padding: 4px 8px;
-        font-size: 13px;
-    }}
-    QMenuBar::item {{
-        background: transparent;
-        padding: 5px 12px;
-        border-radius: 6px;
-        margin: 0 2px;
-    }}
-    QMenuBar::item:selected {{
-        background: {UI_TOKENS['surface_alt']};
-        color: {UI_TOKENS['primary']};
-    }}
-    QMenu {{
-        background: {UI_TOKENS['surface']};
-        color: {UI_TOKENS['text']};
-        border: 1px solid {UI_TOKENS['border']};
-        border-radius: 8px;
-        padding: 6px;
-    }}
-    QMenu::item {{
-        padding: 7px 18px 7px 14px;
-        border-radius: 6px;
-        min-width: 140px;
-    }}
-    QMenu::item:selected {{
-        background: {UI_TOKENS['surface_alt']};
-        color: {UI_TOKENS['primary']};
-    }}
-    QMenu::separator {{
-        height: 1px;
-        background: {UI_TOKENS['border']};
-        margin: 4px 8px;
-    }}
-    QStatusBar {{
-        background: {UI_TOKENS['surface']};
-        color: {UI_TOKENS['text_muted']};
-        border-top: 1px solid {UI_TOKENS['border']};
-        padding: 4px 12px;
-        font-size: 12px;
-    }}
-    QStatusBar::item {{
-        border: none;
-    }}
-    QToolTip {{
-        background: {UI_TOKENS['text']};
-        color: #FFFFFF;
-        border: none;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 12px;
-    }}
-    QScrollBar:vertical {{
-        border: none;
-        background: transparent;
-        width: 10px;
-        margin: 4px 2px 4px 0;
-    }}
-    QScrollBar::handle:vertical {{
-        background: {UI_TOKENS['border_strong']};
-        border-radius: 4px;
-        min-height: 30px;
-    }}
-    QScrollBar::handle:vertical:hover {{
-        background: {UI_TOKENS['text_subtle']};
-    }}
-    QScrollBar::add-line:vertical,
-    QScrollBar::sub-line:vertical,
-    QScrollBar::add-page:vertical,
-    QScrollBar::sub-page:vertical {{
-        background: none;
-        border: none;
-        height: 0;
-    }}
-    QScrollBar:horizontal {{
-        border: none;
-        background: transparent;
-        height: 10px;
-        margin: 0 4px 2px 4px;
-    }}
-    QScrollBar::handle:horizontal {{
-        background: {UI_TOKENS['border_strong']};
-        border-radius: 4px;
-        min-width: 30px;
-    }}
-    QScrollBar::handle:horizontal:hover {{
-        background: {UI_TOKENS['text_subtle']};
-    }}
-    QScrollBar::add-line:horizontal,
-    QScrollBar::sub-line:horizontal,
-    QScrollBar::add-page:horizontal,
-    QScrollBar::sub-page:horizontal {{
-        background: none;
-        border: none;
-        width: 0;
-    }}
-"""
 
 
 def main():
@@ -5559,34 +4938,20 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("M3U8 下载器")
     app.setOrganizationName("M3U8Downloader")
+    app.setStyle("Fusion")
+    app.setFont(resolve_app_font(FONT_BODY))
+    apply_app_theme(0)
 
-    app_font_obj = QFont()
-    app_font_obj.setFamilies([
-        "PingFang SC",
-        "Microsoft YaHei UI",
-        "Microsoft YaHei",
-        "Noto Sans SC",
-        "Source Han Sans SC",
-        "Helvetica Neue",
-        "Segoe UI",
-        "Arial",
-    ])
-    app_font_obj.setPointSize(10)
-    app_font_obj.setHintingPreference(QFont.PreferNoHinting)
-    app.setFont(app_font_obj)
-    app.setStyleSheet(GLOBAL_STYLESHEET)
-    
-    # 设置应用图标
     try:
         icon_path = resolve_app_icon()
         if icon_path:
             app.setWindowIcon(QIcon(icon_path))
     except Exception as e:
         print(f"设置应用图标失败: {e}")
-    
+
     window = MainWindow()
     window.show()
-    
+
     sys.exit(app.exec())
 
 
