@@ -28,13 +28,14 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QFont, QPalette, QColor, QIcon, QPixmap, QPainter, QLinearGradient,
-    QAction, QDesktopServices
+    QAction, QDesktopServices, QTextCharFormat, QTextCursor
 )
 from m3u8_downloader import M3U8Downloader
 from utils import (
     is_valid_m3u8_url, sanitize_filename, ensure_extension,
     format_time, get_available_filename, validate_output_path,
-    extract_title_from_url
+    extract_title_from_url, build_spring_log_segments, LOG_LEVEL_COLORS,
+    log_console_stylesheet,
 )
 from config import (
     DEFAULT_CONFIG,
@@ -94,6 +95,36 @@ def app_font(size, weight=QFont.Normal):
     font.setPointSize(size)
     font.setWeight(weight)
     return font
+
+
+def append_spring_boot_log(widget, message, thread_name="main"):
+    """把一行日志以 Spring Boot 风格彩色写入 QPlainTextEdit。"""
+    if widget is None:
+        return
+
+    role_colors = {
+        "time": "#8B949E",
+        "meta": "#8B949E",
+        "message": "#E6EDF3",
+    }
+
+    cursor = widget.textCursor()
+    cursor.movePosition(QTextCursor.End)
+
+    level = "INFO"
+    for text, role in build_spring_log_segments(message, thread_name=thread_name):
+        fmt = QTextCharFormat()
+        if role == "level":
+            level = text.strip() or level
+            fmt.setForeground(QColor(LOG_LEVEL_COLORS.get(level, "#98C379")))
+            fmt.setFontWeight(QFont.DemiBold)
+        else:
+            fmt.setForeground(QColor(role_colors.get(role, "#E6EDF3")))
+        cursor.insertText(text, fmt)
+
+    widget.setTextCursor(cursor)
+    scrollbar = widget.verticalScrollBar()
+    scrollbar.setValue(scrollbar.maximum())
 
 
 def _make_close_button(on_click):
@@ -2167,7 +2198,7 @@ class SearchSignals(QObject):
     search_error = Signal(str)
     extraction_completed = Signal(dict)
     show_route_dialog = Signal(dict, str, list)  # (routes, title, result_container)
-    log_message = Signal(str)
+    log_message = Signal(str, str)  # message, thread_name
 
 
 class RouteSelectionDialog(QDialog):
@@ -2575,7 +2606,7 @@ class M3u8SearchDialog(QDialog):
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setPlaceholderText("搜索/提取过程日志会实时显示在这里...")
-        self.log_text.setStyleSheet(panel_style)
+        self.log_text.setStyleSheet(log_console_stylesheet(border=UI_TOKENS['border'], radius=UI_TOKENS['radius_card']))
         right_layout.addLayout(right_header)
         right_layout.addWidget(self.log_text)
 
@@ -2709,16 +2740,14 @@ class M3u8SearchDialog(QDialog):
         """线程安全地追加实时日志。"""
         text = str(message or "").rstrip()
         if text:
-            self.signals.log_message.emit(text)
+            thread_name = threading.current_thread().name or "search"
+            self.signals.log_message.emit(text, thread_name)
 
-    def _append_log_line(self, message):
+    def _append_log_line(self, message, thread_name="search"):
         """主线程写入日志面板。"""
         if not hasattr(self, "log_text") or self.log_text is None:
             return
-        timestamp = time.strftime("%H:%M:%S")
-        self.log_text.appendPlainText(f"[{timestamp}] {message}")
-        scrollbar = self.log_text.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        append_spring_boot_log(self.log_text, message, thread_name=thread_name)
 
     def clear_logs(self):
         if hasattr(self, "log_text") and self.log_text is not None:
@@ -3532,7 +3561,7 @@ class M3u8SearchDialog(QDialog):
 
 class MainWindow(QMainWindow):
     """主窗口"""
-    log_message = Signal(str)
+    log_message = Signal(str, str)  # message, thread_name
 
     def __init__(self):
         super().__init__()
@@ -3848,17 +3877,9 @@ class MainWindow(QMainWindow):
         self.main_log_text = QPlainTextEdit()
         self.main_log_text.setReadOnly(True)
         self.main_log_text.setPlaceholderText("下载、搜索、过盾等过程日志会显示在这里...")
-        self.main_log_text.setStyleSheet(f"""
-            QPlainTextEdit {{
-                border: 1px solid {UI_TOKENS['border']};
-                border-radius: {UI_TOKENS['radius_card']}px;
-                padding: 10px;
-                background: {UI_TOKENS['surface']};
-                color: {UI_TOKENS['text']};
-                font-family: 'Consolas', 'Monaco', monospace;
-                font-size: 11px;
-            }}
-        """)
+        self.main_log_text.setStyleSheet(
+            log_console_stylesheet(border=UI_TOKENS['border'], radius=UI_TOKENS['radius_card'])
+        )
         log_tab_layout.addWidget(self.main_log_text, 1)
 
         self.right_tabs.addTab(queue_tab, "下载队列")
@@ -4060,17 +4081,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'log_panel_desc'):
             self.log_panel_desc.setStyleSheet(f"color: {subtle_text}; background: transparent;")
         if hasattr(self, 'main_log_text'):
-            self.main_log_text.setStyleSheet(f"""
-                QPlainTextEdit {{
-                    border: 1px solid {border};
-                    border-radius: {radius_card}px;
-                    padding: 10px;
-                    background: {surface};
-                    color: {text};
-                    font-family: 'Consolas', 'Monaco', monospace;
-                    font-size: 11px;
-                }}
-            """)
+            self.main_log_text.setStyleSheet(
+                log_console_stylesheet(border=border, radius=radius_card)
+            )
         if hasattr(self, 'performance_panel'):
             # 表单里的性能面板：更克制的浅底
             self.performance_panel.setStyleSheet(f"""
@@ -4503,16 +4516,14 @@ class MainWindow(QMainWindow):
         """线程安全地追加主窗口实时日志。"""
         text = str(message or "").rstrip()
         if text:
-            self.log_message.emit(text)
+            thread_name = threading.current_thread().name or "main"
+            self.log_message.emit(text, thread_name)
 
-    def _append_main_log(self, message):
+    def _append_main_log(self, message, thread_name="main"):
         """主线程写入主窗口日志面板。"""
         if not hasattr(self, "main_log_text") or self.main_log_text is None:
             return
-        timestamp = time.strftime("%H:%M:%S")
-        self.main_log_text.appendPlainText(f"[{timestamp}] {message}")
-        scrollbar = self.main_log_text.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        append_spring_boot_log(self.main_log_text, message, thread_name=thread_name)
 
     def clear_main_logs(self):
         if hasattr(self, "main_log_text") and self.main_log_text is not None:

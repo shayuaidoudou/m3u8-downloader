@@ -172,3 +172,89 @@ def extract_title_from_url(url: str) -> str:
         
     except Exception:
         return "未知视频"
+
+
+# ---------- Spring Boot 风格彩色日志 ----------
+
+LOG_LEVEL_COLORS = {
+    "DEBUG": "#61AFEF",  # 蓝
+    "INFO": "#98C379",   # 绿
+    "WARN": "#E5C07B",   # 黄
+    "ERROR": "#E06C75",  # 红
+}
+
+LOG_CONSOLE_STYLE = """
+    QPlainTextEdit {{
+        border: 1px solid {border};
+        border-radius: {radius}px;
+        padding: 10px;
+        background: #0D1117;
+        color: #E6EDF3;
+        font-family: 'SF Mono', 'Menlo', 'Consolas', 'Monaco', monospace;
+        font-size: 11px;
+        selection-background-color: #264F78;
+    }}
+"""
+
+
+def detect_log_level(message: str) -> str:
+    """从日志文本推断级别，兼容 logging / print / 中文提示。"""
+    text = str(message or "")
+    upper = text.upper()
+
+    # logging 标准格式: "INFO name: ..." / "ERROR ..."
+    m = re.match(r"^\s*(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\b", upper)
+    if m:
+        level = m.group(1)
+        if level in ("WARNING", "WARN"):
+            return "WARN"
+        if level == "CRITICAL":
+            return "ERROR"
+        return level
+
+    if re.search(r"\b(ERROR|CRITICAL|EXCEPTION|TRACEBACK)\b", upper) or "[ERROR]" in upper:
+        return "ERROR"
+    if any(token in text for token in ("失败", "错误", "异常", "崩溃", "Forbidden", "403")):
+        return "ERROR"
+    if re.search(r"\b(WARN|WARNING)\b", upper) or "[WARN" in upper:
+        return "WARN"
+    if any(token in text for token in ("警告", "注意", "限流", "访问过量")):
+        return "WARN"
+    if re.search(r"\bDEBUG\b", upper) or "[DEBUG]" in upper:
+        return "DEBUG"
+    return "INFO"
+
+
+def build_spring_log_segments(message: str, thread_name: str = "main"):
+    """
+    构造 Spring Boot 风格日志分段，便于彩色渲染。
+    返回 [(text, role), ...]，role in: time, level, meta, message
+    """
+    from datetime import datetime
+
+    raw = str(message or "").rstrip()
+    # 去掉已有的简单时间前缀，避免重复
+    raw = re.sub(r"^\[\d{1,2}:\d{2}:\d{2}\]\s*", "", raw)
+    level = detect_log_level(raw)
+    # 去掉消息里重复的级别前缀，留给左侧彩色 LEVEL
+    cleaned = re.sub(
+        r"^\s*(\[?(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]?\s*[-:]?\s*)",
+        "",
+        raw,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip() or raw
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.") + f"{datetime.now().microsecond // 1000:03d}"
+    thread = (thread_name or "main")[:12].rjust(12)
+    return [
+        (f"{now}  ", "time"),
+        (f"{level:<5}", "level"),
+        (f" --- [{thread}] : ", "meta"),
+        (cleaned, "message"),
+        ("\n", "message"),
+    ]
+
+
+def log_console_stylesheet(border="#30363D", radius=8) -> str:
+    return LOG_CONSOLE_STYLE.format(border=border, radius=radius)
