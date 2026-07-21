@@ -114,7 +114,7 @@ python -m pytest test/ -q
 
 - [GitHub](https://github.com/shayuaidoudou/m3u8-downloader)
 - [Issues](https://github.com/shayuaidoudou/m3u8-downloader/issues)
-- [作者博客](https://blog.csdn.net/m0_73641772?type=blog)
+- [作者博客](https://blog.shayuaidoudou.store/)
 
 ## License
 
