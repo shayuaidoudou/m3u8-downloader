@@ -9,6 +9,7 @@ from search import (
     IYF_CHANNEL,
     MOFA_CHANNEL,
     NCAT_CHANNEL,
+    NNYY_CHANNEL,
     SEARCH_CHANNELS,
     AiGuaEngine,
     channel_requires_refresh,
@@ -47,14 +48,19 @@ class FakeSession:
 
 class SearchChannelTests(unittest.TestCase):
     def test_channel_metadata(self):
-        self.assertEqual(SEARCH_CHANNELS, (AIGUA_CHANNEL, NCAT_CHANNEL, MOFA_CHANNEL, IYF_CHANNEL))
+        self.assertEqual(
+            SEARCH_CHANNELS,
+            (AIGUA_CHANNEL, MOFA_CHANNEL, IYF_CHANNEL, NNYY_CHANNEL),
+        )
         self.assertEqual(get_channel_input_mode(AIGUA_CHANNEL), CHANNEL_INPUT_TYPE)
         self.assertEqual(get_channel_input_mode(NCAT_CHANNEL), CHANNEL_INPUT_COOKIE)
         self.assertEqual(get_channel_input_mode(MOFA_CHANNEL), CHANNEL_INPUT_NONE)
         self.assertEqual(get_channel_input_mode(IYF_CHANNEL), CHANNEL_INPUT_COOKIE)
+        self.assertEqual(get_channel_input_mode(NNYY_CHANNEL), CHANNEL_INPUT_NONE)
         self.assertFalse(channel_requires_refresh(AIGUA_CHANNEL))
         self.assertTrue(channel_requires_refresh(NCAT_CHANNEL))
         self.assertTrue(channel_requires_refresh(IYF_CHANNEL))
+        self.assertFalse(channel_requires_refresh(NNYY_CHANNEL))
 
     def test_aigua_proxy_is_applied_before_requests(self):
         session = FakeSession()
@@ -132,6 +138,10 @@ class SearchChannelTests(unittest.TestCase):
             create_search_engine(IYF_CHANNEL, proxy_config=proxy, iyf_cookie='full-cookie')
             iyf_engine.assert_called_once_with(proxy_config=proxy, cookie='full-cookie')
 
+        with patch('search_nnyy.NNYYSearcher') as nnyy_engine:
+            create_search_engine(NNYY_CHANNEL, proxy_config=proxy)
+            nnyy_engine.assert_called_once_with(proxy_config=proxy)
+
     def test_search_adapter_normalizes_engine_signatures(self):
         engine = Mock()
         engine.search.return_value = ['result']
@@ -147,6 +157,11 @@ class SearchChannelTests(unittest.TestCase):
         engine.reset_mock()
         engine.search.return_value = ['result']
         self.assertEqual(search_with_engine(IYF_CHANNEL, engine, '关键词'), ['result'])
+        engine.search.assert_called_once_with('关键词', verbose=False)
+
+        engine.reset_mock()
+        engine.search.return_value = ['result']
+        self.assertEqual(search_with_engine(NNYY_CHANNEL, engine, '关键词'), ['result'])
         engine.search.assert_called_once_with('关键词', verbose=False)
 
 

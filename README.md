@@ -10,12 +10,14 @@
 
 - **简约界面**：现代工作台布局，多套主题可切换
 - **多线程下载**：可配置单任务线程数与同时下载任务数
-- **加密流支持**：自动处理常见 AES-128 HLS 加密
+- **加密流支持**：自动识别 AES-128 HLS 加密、预加载 Key 并输出解密阶段日志
 - **FFmpeg 合并**：优先用 FFmpeg 合并 TS，减少音画不同步；无 FFmpeg 时走备用合并
 - **请求头 / 代理**：自定义 Header、请求头模板，适配部分防盗链站点
 - **任务队列**：进度总览、状态统计、清理已完成任务
+- **安全退出**：退出时停止未完成任务，清理已下载分片和合并半成品
 - **实时日志**：主界面与搜索窗口可切换查看运行日志
-- **片源搜索（可选）**：爱瓜 / NCat22 / 魔法影视 / 爱壹帆，搜索后提取 M3U8 再下载
+- **动态视觉**：主题色粒子、轨道核心、交互柔光和按钮扫光，可在设置中关闭
+- **片源搜索（可选）**：爱瓜 / 魔法影视 / 爱壹帆 / 努努影院，搜索后提取 M3U8 再下载
 
 ## 界面预览
 
@@ -56,7 +58,7 @@ python install.py
 ### 片源搜索
 
 1. 顶部点击「搜索」，选择渠道与关键词
-2. 选中结果后提取 M3U8（提取为单线程，降低触发风控概率）
+2. 选中结果后提取 M3U8（各渠道使用受控并发、节流或自动过盾）
 3. 将链接加入下载队列；分片下载仍使用多线程
 
 部分渠道可能需要 Cookie，或在触发 Cloudflare 时由内置浏览器辅助过验证。站点接口会变动，搜源功能不保证长期可用。
@@ -69,6 +71,23 @@ python install.py
 
 ```
 ├── main.py                 # GUI 入口
+├── app/                    # GUI 组件与窗口编排
+│   ├── main_window.py      # 主窗口组合入口与状态初始化
+│   ├── main_window_ui.py   # 主窗口布局与视觉组件
+│   ├── main_window_queue.py # 任务创建、调度与进度状态
+│   ├── main_window_lifecycle.py # 托盘、菜单、日志与退出流程
+│   ├── effects.py          # 工作区、能量核心与卡片边框动效
+│   ├── button_effects.py   # 可复用按钮扫光覆盖层
+│   ├── compose_effects.py  # 左侧配置栏背景的极光丝带动效
+│   ├── widgets.py          # 任务卡片、下载线程、通用控件
+│   ├── settings_dialog.py  # 偏好设置
+│   ├── message_box.py      # 通用消息框
+│   ├── headers_dialog.py   # 请求头编辑器
+│   ├── search_dialog.py    # 搜索窗口组合入口
+│   ├── search_dialog_view.py # 搜索界面、引擎切换与日志
+│   ├── search_dialog_workflow.py # 搜索、提取与结果处理
+│   ├── route_dialog.py     # 搜索信号与线路选择
+│   └── ui_support.py       # 资源路径、字体与日志辅助
 ├── m3u8_downloader.py      # 下载与合并核心
 ├── config.py               # 默认配置与主题
 ├── utils.py                # 工具函数
@@ -77,6 +96,7 @@ python install.py
 ├── search_ncat.py          # NCat22
 ├── search_mofa.py          # 魔法影视
 ├── search_iyf.py           # 爱壹帆
+├── search_nnyy.py          # 努努影院：首页、搜索、详情与线路接口
 ├── assets/
 │   ├── favicon.ico
 │   └── screenshot-main.png
@@ -94,7 +114,7 @@ python -m pytest test/ -q
 
 ## 配置
 
-常用默认项见 `config.py`（线程数、超时、窗口大小等）。运行时偏好保存在本地 `settings.json`（已加入 `.gitignore`，不会提交）。
+常用默认项见 `config.py`（线程数、超时、窗口大小、动态特效等）。运行时偏好保存在本地 `settings.json`（已加入 `.gitignore`，不会提交）。「设置 → 界面设置」可单独关闭持续动画，静态主题和布局不会受影响。
 
 ## 注意事项
 

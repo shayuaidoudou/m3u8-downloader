@@ -21,20 +21,28 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QStyle,
     QWidget,
 )
 
 from config import UI_TOKENS, merge_theme_tokens
 
 # --- 字体层级（像素）---
-FONT_TITLE = 18
-FONT_BODY = 14
+FONT_TITLE = 17
+FONT_BODY = 13
 FONT_CAPTION = 12
 
-# --- 阴影 ---
-SHADOW_BLUR = 20
-SHADOW_ALPHA = 42  # 0-255
-SHADOW_Y_OFFSET = 6
+# 弹窗保持略高于辅助信息的可读性，但整体密度与主窗口一致。
+DIALOG_TITLE = 17
+DIALOG_GROUP_TITLE = 14
+DIALOG_BODY = 13
+DIALOG_LABEL = 13
+DIALOG_CAPTION = 12
+
+# --- 阴影（克制：靠边框分层，阴影只做轻微抬升）---
+SHADOW_BLUR = 14
+SHADOW_ALPHA = 28  # 0-255
+SHADOW_Y_OFFSET = 4
 
 FONT_FAMILIES = [
     "PingFang SC",
@@ -70,12 +78,35 @@ def _t(tokens, key, default=None):
     return UI_TOKENS.get(key, default)
 
 
+def _hex_to_rgb(hex_color):
+    value = str(hex_color).lstrip('#')
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _mix(hex_color, other, ratio):
+    """按 ratio 混合两个 hex；ratio=0 偏向 hex_color，1 偏向 other。"""
+    r1, g1, b1 = _hex_to_rgb(hex_color)
+    r2, g2, b2 = _hex_to_rgb(other)
+    return '#{:02X}{:02X}{:02X}'.format(
+        int(r1 + (r2 - r1) * ratio),
+        int(g1 + (g2 - g1) * ratio),
+        int(b1 + (b2 - b1) * ratio),
+    )
+
+
+def _rgba(hex_color, alpha):
+    """alpha 传 0-1 浮点，输出 Qt QSS 认可的 0-255 整数。"""
+    r, g, b = _hex_to_rgb(hex_color)
+    return f'rgba({r}, {g}, {b}, {int(round(alpha * 255))})'
+
+
 def build_stylesheet(tokens=None):
     """根据 token 生成全局 QSS（含 hover / pressed / disabled / focus）。"""
     t = tokens or UI_TOKENS
     primary = _t(t, 'primary')
     primary_hover = _t(t, 'primary_hover')
     primary_active = _t(t, 'primary_active')
+    primary_soft = _t(t, 'primary_soft')
     bg = _t(t, 'bg')
     surface = _t(t, 'surface')
     surface_alt = _t(t, 'surface_alt')
@@ -87,25 +118,69 @@ def build_stylesheet(tokens=None):
     border_strong = _t(t, 'border_strong')
     border_focus = _t(t, 'border_focus')
     danger = _t(t, 'danger')
-    radius = _t(t, 'radius', 10)
+    radius = _t(t, 'radius', 8)
+    is_dark = bool(_t(t, 'is_dark', True))
+
+    # 主按钮文字颜色按主色亮度自适应（金色→墨色，靛蓝→白色）
+    pr, pg, pb = _hex_to_rgb(primary)
+    on_primary = '#14100A' if (0.299 * pr + 0.587 * pg + 0.114 * pb) > 150 else '#FFFFFF'
+
+    # 渐变分层：背景上浅下深，卡片表面自带一层微光
+    if is_dark:
+        bg_top = _mix(bg, '#FFFFFF', 0.04)
+        bg_bottom = _mix(bg, '#000000', 0.45)
+        surface_hi = _mix(surface, '#FFFFFF', 0.05)
+        surface_lo = _mix(surface, '#000000', 0.22)
+        input_bg = _mix(bg, '#000000', 0.25)
+        input_focus_bg = _mix(input_bg, primary, 0.05)
+    else:
+        bg_top = _mix(bg, '#FFFFFF', 0.4)
+        bg_bottom = _mix(bg, '#000000', 0.03)
+        surface_hi = surface
+        surface_lo = _mix(surface, '#000000', 0.04)
+        input_bg = surface
+        input_focus_bg = _mix(surface, primary, 0.04)
+
+    primary_top = _mix(primary, '#FFFFFF', 0.22)
+    primary_hover_top = _mix(primary_hover, '#FFFFFF', 0.25)
+    chunk_from = _mix(primary, primary_active, 0.6)
+    chunk_to = primary_hover
+    accent_dim = _rgba(primary, 0.45)
+    accent_faint = _rgba(primary, 0.16)
 
     return f"""
     /* ===== Base（不要给所有 QWidget 强制背景，否则会吞掉标题栏/图标） ===== */
     QMainWindow {{
-        background-color: {bg};
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {bg_top}, stop:0.35 {bg}, stop:1 {bg_bottom});
         color: {text};
         font-size: {FONT_BODY}px;
     }}
     QDialog {{
         background-color: {bg};
         color: {text};
-        font-size: {FONT_BODY}px;
+        font-size: {DIALOG_BODY}px;
+    }}
+    QDialog QPushButton {{
+        font-size: {DIALOG_BODY}px;
+        min-height: 38px;
+    }}
+    QDialog QLineEdit,
+    QDialog QTextEdit,
+    QDialog QPlainTextEdit,
+    QDialog QComboBox,
+    QDialog QSpinBox {{
+        font-size: {DIALOG_BODY}px;
     }}
     QWidget#main_shell,
     QWidget#main_surface,
     QWidget#workspace {{
-        background-color: {bg};
+        background: transparent;
         color: {text};
+    }}
+    QWidget#main_shell {{
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {bg_top}, stop:0.35 {bg}, stop:1 {bg_bottom});
     }}
     QLabel {{
         background: transparent;
@@ -124,7 +199,7 @@ def build_stylesheet(tokens=None):
     QLabel[role="title"] {{
         color: {text};
         font-size: {FONT_TITLE}px;
-        font-weight: 600;
+        font-weight: 700;
     }}
     QLabel[role="subtitle"] {{
         color: {text_muted};
@@ -133,7 +208,7 @@ def build_stylesheet(tokens=None):
 
     /* ===== Title bar ===== */
     QFrame#title_bar {{
-        background: {surface};
+        background: {surface_lo};
         border: none;
         border-bottom: 1px solid {border};
     }}
@@ -182,70 +257,102 @@ def build_stylesheet(tokens=None):
         color: #FFFFFF;
     }}
 
-    /* ===== Cards / sections ===== */
-    QWidget#main_surface {{
-        background: {bg};
-    }}
-    QFrame#compose_card,
-    QFrame#queue_section,
-    QFrame#dialog_card {{
-        background: {surface};
+    /* ===== Cards / sections — 卡片自带渐变微光，顶栏透明 ===== */
+    QFrame#compose_card {{
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {surface_hi}, stop:0.12 {surface}, stop:1 {surface_lo});
         border: 1px solid {border};
+        border-radius: {radius}px;
+    }}
+    QFrame#queue_section {{
+        background: transparent;
+        border: none;
+        border-radius: 0;
+    }}
+    QFrame#dialog_card {{
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {surface_hi}, stop:1 {surface_lo});
+        border: 1px solid {border_strong};
         border-radius: {radius}px;
     }}
     QFrame#top_bar {{
         background: transparent;
         border: none;
+        border-bottom: 1px solid {border};
+        border-radius: 0;
     }}
     QFrame#performance_panel {{
         background: {surface_alt};
         border: 1px solid {border};
-        border-radius: {radius}px;
+        border-radius: {_t(t, 'radius_control', 8)}px;
     }}
 
     /* ===== Buttons（variant 属性） ===== */
     QPushButton {{
-        background: {surface};
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {_mix(surface_alt, '#FFFFFF', 0.05) if is_dark else surface_alt},
+            stop:1 {surface_alt});
         color: {text};
         border: 1px solid {border};
-        border-radius: {radius}px;
-        padding: 8px 14px;
-        min-height: 36px;
+        border-radius: {_t(t, 'radius_control', 8)}px;
+        padding: 7px 12px;
+        min-height: 34px;
         font-size: {FONT_BODY}px;
         font-weight: 600;
     }}
     QPushButton:hover {{
-        background: {surface_alt};
+        background: {surface_hover};
         border-color: {border_strong};
-        color: {primary};
+        color: {text};
     }}
     QPushButton:pressed {{
-        background: {surface_hover};
+        background: {surface};
         border-color: {primary};
     }}
     QPushButton:disabled {{
-        background: {surface_alt};
-        color: {text_muted};
+        background: {surface};
+        color: {text_subtle};
         border-color: {border};
     }}
     QPushButton[variant="primary"] {{
-        background: {primary};
-        color: #FFFFFF;
-        border: 1px solid {primary};
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {primary_top}, stop:1 {primary});
+        color: {on_primary};
+        border: 1px solid {_mix(primary, '#FFFFFF', 0.3)};
+        font-weight: 700;
     }}
     QPushButton[variant="primary"]:hover {{
-        background: {primary_hover};
-        border-color: {primary_hover};
-        color: #FFFFFF;
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {primary_hover_top}, stop:1 {primary_hover});
+        border-color: {primary_hover_top};
+        color: {on_primary};
     }}
     QPushButton[variant="primary"]:pressed {{
         background: {primary_active};
         border-color: {primary_active};
-        color: #FFFFFF;
+        color: {on_primary};
     }}
     QPushButton[variant="primary"]:disabled {{
         background: {surface_alt};
-        color: {text_muted};
+        color: {text_subtle};
+        border-color: {border};
+    }}
+    QPushButton[variant="outline"] {{
+        background: transparent;
+        color: {text};
+        border: 1px solid {border_strong};
+    }}
+    QPushButton[variant="outline"]:hover {{
+        background: {accent_faint};
+        border-color: {accent_dim};
+        color: {primary};
+    }}
+    QPushButton[variant="outline"]:pressed {{
+        background: {surface_hover};
+        border-color: {primary};
+    }}
+    QPushButton[variant="outline"]:disabled {{
+        color: {text_subtle};
         border-color: {border};
     }}
     QPushButton[variant="danger"] {{
@@ -277,37 +384,125 @@ def build_stylesheet(tokens=None):
         color: {text};
     }}
 
-    /* ===== Inputs ===== */
-    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox {{
-        background: {surface};
+    /* ===== Icon toolbar / filter chips ===== */
+    QPushButton#icon_tool_btn {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {radius}px;
+        color: {text_muted};
+        padding: 0;
+        min-width: 36px;
+        max-width: 36px;
+        min-height: 36px;
+        max-height: 36px;
+    }}
+    QPushButton#icon_tool_btn:hover {{
+        background: {surface_alt};
+        border-color: {border};
+        color: {primary};
+    }}
+    QPushButton#icon_tool_btn:pressed {{
+        background: {surface_hover};
+        border-color: {primary};
+    }}
+    QPushButton#filter_chip {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        color: {text_muted};
+        padding: 4px 12px;
+        min-height: 28px;
+        max-height: 28px;
+        font-size: {FONT_CAPTION}px;
+        font-weight: 500;
+    }}
+    QPushButton#filter_chip:hover {{
+        border-color: {border_strong};
+        color: {text};
+        background: {surface_alt};
+    }}
+    QPushButton#filter_chip[active="true"] {{
+        background: {accent_faint};
+        border-color: {accent_dim};
+        color: {primary};
+        font-weight: 700;
+    }}
+    QPushButton#advanced_toggle {{
+        background: transparent;
+        border: none;
+        color: {text_muted};
+        text-align: left;
+        padding: 4px 0;
+        min-height: 28px;
+        font-size: {FONT_CAPTION}px;
+        font-weight: 600;
+    }}
+    QPushButton#advanced_toggle:hover {{
+        color: {primary};
+        background: transparent;
+        border: none;
+    }}
+    QPushButton#task_action_btn {{
+        background: transparent;
         border: 1px solid {border};
         border-radius: {radius}px;
+        color: {text_muted};
+        padding: 0;
+        min-width: 30px;
+        max-width: 30px;
+        min-height: 30px;
+        max-height: 30px;
+    }}
+    QPushButton#task_action_btn:hover {{
+        background: {surface_alt};
+        border-color: {primary};
+        color: {primary};
+    }}
+    QPushButton#task_action_btn[variant="danger"]:hover {{
+        border-color: {danger};
+        color: {danger};
+    }}
+    QPushButton#task_action_btn:disabled {{
+        background: transparent;
+        color: {text_subtle};
+        border-color: {border};
+    }}
+    QWidget#advanced_panel {{
+        background: transparent;
+    }}
+
+    /* ===== Inputs ===== */
+    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox {{
+        background: {input_bg};
+        border: 1px solid {border};
+        border-radius: {_t(t, 'radius_control', 8)}px;
         padding: 8px 12px;
         color: {text};
         selection-background-color: {primary};
-        selection-color: #FFFFFF;
-        min-height: 36px;
+        selection-color: {on_primary};
+        min-height: 34px;
         font-size: {FONT_BODY}px;
     }}
     QSpinBox {{
-        background: {surface};
+        background: {input_bg};
         border: 1px solid {border};
-        border-radius: {radius}px;
+        border-radius: {_t(t, 'radius_control', 8)}px;
         padding: 6px 10px 6px 12px;
         color: {text};
         selection-background-color: {primary};
-        selection-color: #FFFFFF;
-        min-height: 40px;
-        max-height: 40px;
+        selection-color: {on_primary};
+        min-height: 34px;
+        max-height: 36px;
         font-size: {FONT_BODY}px;
     }}
     QLineEdit:hover, QTextEdit:hover, QPlainTextEdit:hover,
     QComboBox:hover, QSpinBox:hover {{
-        border-color: {border_focus};
+        border-color: {border_strong};
     }}
     QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,
     QComboBox:focus, QSpinBox:focus {{
         border-color: {primary};
+        background: {input_focus_bg};
     }}
     QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled,
     QComboBox:disabled, QSpinBox:disabled {{
@@ -375,16 +570,17 @@ def build_stylesheet(tokens=None):
     /* ===== Progress ===== */
     QProgressBar {{
         border: none;
-        border-radius: {radius}px;
-        background: {surface_alt};
+        border-radius: {_t(t, 'radius_progress', 3)}px;
+        background: {_mix(surface_alt, '#000000', 0.25) if is_dark else surface_alt};
         text-align: center;
         color: transparent;
-        min-height: 6px;
-        max-height: 8px;
+        min-height: 5px;
+        max-height: 6px;
     }}
     QProgressBar::chunk {{
-        border-radius: {radius}px;
-        background: {primary};
+        border-radius: {_t(t, 'radius_progress', 3)}px;
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 {chunk_from}, stop:1 {chunk_to});
     }}
 
     /* ===== Tabs ===== */
@@ -398,19 +594,19 @@ def build_stylesheet(tokens=None):
         color: {text_muted};
         border: none;
         border-bottom: 2px solid transparent;
-        padding: 8px 16px;
-        margin-right: 4px;
+        padding: 9px 18px;
+        margin-right: 6px;
         font-size: {FONT_BODY}px;
+        font-weight: 600;
     }}
     QTabBar::tab:selected {{
         color: {primary};
         border-bottom: 2px solid {primary};
-        font-weight: 600;
+        font-weight: 700;
     }}
     QTabBar::tab:hover:!selected {{
         color: {text};
-        background: {surface_alt};
-        border-radius: {radius}px {radius}px 0 0;
+        border-bottom: 2px solid {border_strong};
     }}
 
     /* ===== Menu / Status ===== */
@@ -453,8 +649,8 @@ def build_stylesheet(tokens=None):
         margin: 4px 8px;
     }}
     QStatusBar {{
-        background: {surface};
-        color: {text_muted};
+        background: transparent;
+        color: {text_subtle};
         border-top: 1px solid {border};
         padding: 6px 12px;
         font-size: {FONT_CAPTION}px;
@@ -463,10 +659,10 @@ def build_stylesheet(tokens=None):
         border: none;
     }}
     QToolTip {{
-        background: {text};
-        color: #FFFFFF;
-        border: none;
-        border-radius: {radius}px;
+        background: {surface_alt};
+        color: {text};
+        border: 1px solid {accent_dim};
+        border-radius: 6px;
         padding: 6px 10px;
         font-size: {FONT_CAPTION}px;
     }}
@@ -548,18 +744,29 @@ def build_stylesheet(tokens=None):
         border-color: {primary};
     }}
     QCheckBox::indicator:checked {{
-        background: {primary};
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {primary_top}, stop:1 {primary});
         border-color: {primary};
     }}
 
-    /* ===== Task scroll ===== */
+    /* ===== Task scroll — 去掉外框，让任务卡自己呼吸 ===== */
     QScrollArea#task_scroll {{
-        border: 1px solid {border};
-        border-radius: {radius}px;
-        background: {surface_alt};
+        border: none;
+        border-radius: 0;
+        background: transparent;
     }}
     QWidget#task_container {{
         background: transparent;
+    }}
+
+    /* ===== Empty state ===== */
+    QFrame#empty_state_card {{
+        background: qradialgradient(
+            cx:0.5, cy:0.38, radius:0.78, fx:0.5, fy:0.38,
+            stop:0 {primary_soft}, stop:0.34 {surface}, stop:1 {surface}
+        );
+        border: 1px solid {border};
+        border-radius: {radius}px;
     }}
     """
 
@@ -585,15 +792,154 @@ def apply_drop_shadow(widget, blur=SHADOW_BLUR, alpha=SHADOW_ALPHA, y_offset=SHA
     return effect
 
 
+def apply_glow(widget, color=None, blur=22, alpha=110):
+    """给主 CTA / 强调元素加同色辉光（区别于普通投影）。"""
+    if widget is None:
+        return None
+    base = QColor(color or UI_TOKENS['primary'])
+    base.setAlpha(alpha)
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(blur)
+    effect.setOffset(0, 2)
+    effect.setColor(base)
+    widget.setGraphicsEffect(effect)
+    return effect
+
+
+_STANDARD_ICON_FALLBACKS = {
+    "fa5s.play": QStyle.SP_MediaPlay,
+    "fa5s.play-circle": QStyle.SP_MediaPlay,
+    "fa5s.pause": QStyle.SP_MediaPause,
+    "fa5s.trash": QStyle.SP_TrashIcon,
+    "fa5s.folder-open": QStyle.SP_DirOpenIcon,
+    "fa5s.search": QStyle.SP_FileDialogContentsView,
+    "fa5s.code": QStyle.SP_FileDialogDetailedView,
+    "fa5s.cog": QStyle.SP_FileDialogInfoView,
+    "fa5s.inbox": QStyle.SP_DriveHDIcon,
+    "fa5s.ellipsis-v": QStyle.SP_TitleBarMenuButton,
+    "fa5s.times": QStyle.SP_TitleBarCloseButton,
+    "fa5s.window-minimize": QStyle.SP_TitleBarMinButton,
+    "fa5s.window-maximize": QStyle.SP_TitleBarMaxButton,
+    "fa5s.window-restore": QStyle.SP_TitleBarNormalButton,
+}
+
+
+def _standard_icon(name):
+    """Return a Qt-native icon when the optional icon font is unavailable."""
+    app = QApplication.instance()
+    standard_pixmap = _STANDARD_ICON_FALLBACKS.get(name)
+    if app is None or standard_pixmap is None:
+        from PySide6.QtGui import QIcon
+        return QIcon()
+    return app.style().standardIcon(standard_pixmap)
+
+
+def _painted_fallback_icon(name, color):
+    """Draw core application icons in one consistent stroke style."""
+    from PySide6.QtCore import QPointF, QRectF
+    from PySide6.QtGui import QBrush, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+
+    if name not in {
+        "fa5s.play", "fa5s.play-circle", "fa5s.pause", "fa5s.trash",
+        "fa5s.search", "fa5s.code", "fa5s.folder-open", "fa5s.cog", "fa5s.inbox",
+    }:
+        return QIcon()
+
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    paint_color = QColor(color or UI_TOKENS['text_muted'])
+    pen = QPen(paint_color, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+
+    if name in ("fa5s.play", "fa5s.play-circle"):
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(paint_color))
+        painter.drawPolygon(QPolygonF([
+            QPointF(8, 5), QPointF(19, 12), QPointF(8, 19),
+        ]))
+    elif name == "fa5s.pause":
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(paint_color))
+        painter.drawRoundedRect(QRectF(6, 5, 4, 14), 1, 1)
+        painter.drawRoundedRect(QRectF(14, 5, 4, 14), 1, 1)
+    elif name == "fa5s.trash":
+        painter.drawRoundedRect(QRectF(7, 7, 10, 12), 1, 1)
+        painter.drawLine(QPointF(5, 6), QPointF(19, 6))
+        painter.drawLine(QPointF(9, 4), QPointF(15, 4))
+        painter.drawLine(QPointF(10, 10), QPointF(10, 16))
+        painter.drawLine(QPointF(14, 10), QPointF(14, 16))
+    elif name == "fa5s.search":
+        painter.drawEllipse(QRectF(4.5, 4.5, 11, 11))
+        painter.drawLine(QPointF(14.5, 14.5), QPointF(20, 20))
+    elif name == "fa5s.code":
+        painter.drawPolyline(QPolygonF([
+            QPointF(9, 6), QPointF(4, 12), QPointF(9, 18),
+        ]))
+        painter.drawPolyline(QPolygonF([
+            QPointF(15, 6), QPointF(20, 12), QPointF(15, 18),
+        ]))
+    elif name == "fa5s.folder-open":
+        path = QPainterPath(QPointF(3, 8))
+        path.lineTo(3, 18)
+        path.lineTo(18, 18)
+        path.lineTo(21, 10)
+        path.lineTo(10, 10)
+        path.lineTo(8, 7)
+        path.lineTo(3, 7)
+        path.closeSubpath()
+        painter.drawPath(path)
+    elif name == "fa5s.cog":
+        painter.drawEllipse(QRectF(6.5, 6.5, 11, 11))
+        painter.drawEllipse(QRectF(9.5, 9.5, 5, 5))
+        for start, end in (
+            ((12, 3), (12, 6)), ((12, 18), (12, 21)),
+            ((3, 12), (6, 12)), ((18, 12), (21, 12)),
+            ((5.5, 5.5), (7.6, 7.6)), ((16.4, 16.4), (18.5, 18.5)),
+            ((18.5, 5.5), (16.4, 7.6)), ((7.6, 16.4), (5.5, 18.5)),
+        ):
+            painter.drawLine(QPointF(*start), QPointF(*end))
+    elif name == "fa5s.inbox":
+        painter.drawRoundedRect(QRectF(4, 5, 16, 14), 2, 2)
+        painter.drawPolyline(QPolygonF([
+            QPointF(4, 14), QPointF(8.5, 14), QPointF(10, 16),
+            QPointF(14, 16), QPointF(15.5, 14), QPointF(20, 14),
+        ]))
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _icon_has_visible_pixels(icon):
+    """Reject non-null icon objects whose font glyph rendered transparent."""
+    if icon.isNull():
+        return False
+    image = icon.pixmap(16, 16).toImage()
+    return any(
+        image.pixelColor(x, y).alpha() > 0
+        for y in range(image.height())
+        for x in range(image.width())
+    )
+
+
 def qta_icon(name, color=None, scale_factor=0.9):
-    """安全加载 qtawesome 图标；失败时返回空 QIcon。"""
+    """Load a QtAwesome icon, falling back to Qt's bundled icon set."""
     from PySide6.QtGui import QIcon
+    color = color or UI_TOKENS['text_muted']
     try:
         import qtawesome as qta
-        color = color or UI_TOKENS['text_muted']
-        return qta.icon(name, color=color, scale_factor=scale_factor)
+        icon = qta.icon(name, color=color, scale_factor=scale_factor)
+        if _icon_has_visible_pixels(icon):
+            return icon
     except Exception:
-        return QIcon()
+        pass
+    fallback = _painted_fallback_icon(name, color)
+    if not fallback.isNull():
+        return fallback
+    fallback = _standard_icon(name)
+    return fallback if not fallback.isNull() else QIcon()
 
 
 def polish_widget(widget):

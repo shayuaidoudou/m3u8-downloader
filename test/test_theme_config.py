@@ -50,15 +50,18 @@ class ThemeConfigTests(unittest.TestCase):
         self.assertEqual(get_theme_name(999), '未知主题 (999)')
 
     def test_merge_theme_tokens_unifies_radius_and_primary(self):
-        tokens = merge_theme_tokens(0)
+        light_index = next(index for index, theme in THEMES.items() if not theme['is_dark'])
+        dark_index = next(index for index, theme in THEMES.items() if theme['is_dark'])
+
+        tokens = merge_theme_tokens(light_index)
         self.assertEqual(tokens['radius'], UI_TOKENS['radius'])
         self.assertEqual(tokens['radius_card'], tokens['radius'])
-        self.assertEqual(tokens['primary'], THEMES[0]['primary'])
+        self.assertEqual(tokens['primary'], THEMES[light_index]['primary'])
         self.assertFalse(tokens['is_dark'])
 
-        dark = merge_theme_tokens(7)
+        dark = merge_theme_tokens(dark_index)
         self.assertTrue(dark['is_dark'])
-        self.assertEqual(dark['primary'], THEMES[7]['primary'])
+        self.assertEqual(dark['primary'], THEMES[dark_index]['primary'])
         self.assertNotEqual(dark['bg'], tokens['bg'])
 
     def test_build_stylesheet_contains_interaction_states(self):

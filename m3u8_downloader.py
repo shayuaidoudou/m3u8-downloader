@@ -20,6 +20,7 @@ import time
 import subprocess
 import shutil
 import platform
+import tempfile
 import urllib3
 
 # 禁用SSL警告
@@ -69,6 +70,32 @@ class FFmpegMerger:
     def __init__(self):
         self.ffmpeg_path = self._find_ffmpeg()
         self.available = self.ffmpeg_path is not None
+        self._cancel_requested = threading.Event()
+        self._process_lock = threading.Lock()
+        self._process = None
+
+    def reset_cancellation(self):
+        """为一次新的合并任务重置取消状态。"""
+        self._cancel_requested.clear()
+
+    def cancel(self):
+        """中止正在运行的 FFmpeg，避免退出后继续写入文件。"""
+        self._cancel_requested.set()
+        with self._process_lock:
+            process = self._process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        except OSError:
+            pass
 
     def _find_ffmpeg(self) -> Optional[str]:
         """查找FFmpeg可执行文件"""
@@ -120,7 +147,7 @@ class FFmpegMerger:
 
     def merge_segments(self, segment_files: List[str], output_path: str) -> bool:
         """使用FFmpeg合并TS片段"""
-        if not self.available:
+        if not self.available or self._cancel_requested.is_set():
             return False
 
         try:
@@ -156,16 +183,33 @@ class FFmpegMerger:
                     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                     startupinfo.wShowWindow = subprocess.SW_HIDE
                 
-                result = subprocess.run(
+                process = subprocess.Popen(
                     cmd,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    timeout=3600,  # 1小时超时
                     startupinfo=startupinfo  # 隐藏窗口
                 )
+                with self._process_lock:
+                    self._process = process
+                if self._cancel_requested.is_set():
+                    self.cancel()
 
-                if result.returncode != 0:
-                    print(f"[ERROR] FFmpeg合并失败: {result.stderr}")
+                try:
+                    _, stderr = process.communicate(timeout=3600)  # 1小时超时
+                except subprocess.TimeoutExpired:
+                    self.cancel()
+                    _, stderr = process.communicate()
+                    print("[ERROR] FFmpeg合并超时")
+                    return False
+                finally:
+                    with self._process_lock:
+                        if self._process is process:
+                            self._process = None
+
+                if process.returncode != 0:
+                    if not self._cancel_requested.is_set():
+                        print(f"[ERROR] FFmpeg合并失败: {stderr}")
                     return False
 
                 print(f"[DEBUG] FFmpeg合并成功: {output_path}")
@@ -469,12 +513,74 @@ class M3U8Downloader:
         self.session.headers.clear()
         self.session.headers.update(merged_headers)
         self._stop_flag = threading.Event()
+        self._artifact_lock = threading.Lock()
+        self._current_temp_dir = None
+        self._current_temp_parent = None
+
+    def _prepare_workspace(self, output_path: str):
+        """
+        在输出目录内创建本任务独占的工作区。
+
+        合并产物先写入该目录，只有完整成功后才原子替换最终文件。
+        """
+        normalized_output = os.path.abspath(os.path.expanduser(output_path))
+        output_dir = os.path.dirname(normalized_output) or os.getcwd()
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(normalized_output)
+        temp_dir = tempfile.mkdtemp(
+            prefix=f".{filename}.",
+            suffix=".part",
+            dir=output_dir,
+        )
+        with self._artifact_lock:
+            self._current_temp_dir = temp_dir
+            self._current_temp_parent = os.path.abspath(output_dir)
+        staged_output = os.path.join(temp_dir, filename)
+        print(f"[DEBUG] 任务临时工作区: {temp_dir}")
+        return normalized_output, temp_dir, staged_output
+
+    def cleanup_incomplete_artifacts(self) -> bool:
+        """删除由当前下载器实例创建的专属临时工作区。"""
+        with self._artifact_lock:
+            temp_dir = self._current_temp_dir
+            expected_parent = self._current_temp_parent
+            self._current_temp_dir = None
+            self._current_temp_parent = None
+        if not temp_dir:
+            return True
+
+        actual_parent = os.path.abspath(os.path.dirname(temp_dir))
+        temp_name = os.path.basename(temp_dir)
+        if (
+            not expected_parent
+            or actual_parent != expected_parent
+            or not temp_name.startswith(".")
+            or not temp_name.endswith(".part")
+        ):
+            print(f"[WARNING] 拒绝清理超出任务工作区边界的路径: {temp_dir}")
+            return False
+
+        try:
+            if os.path.islink(temp_dir):
+                os.unlink(temp_dir)
+            elif os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir)
+            elif os.path.lexists(temp_dir):
+                os.remove(temp_dir)
+            print(f"[DEBUG] 已清理未完成任务工作区: {temp_dir}")
+            return True
+        except OSError as exc:
+            print(f"[WARNING] 清理未完成任务工作区失败: {temp_dir} - {exc}")
+            return False
     
     def download(self, m3u8_url: str, output_path: str, progress_callback: Callable = None) -> bool:
         """下载M3U8视频"""
         try:
+            # 清理同一实例上一次未完成运行的工作区。
+            self.cleanup_incomplete_artifacts()
             # 重置停止标志
             self._stop_flag.clear()
+            self.ffmpeg_merger.reset_cancellation()
             
             # 解析M3U8
             if progress_callback:
@@ -487,19 +593,39 @@ class M3U8Downloader:
             
             if not segments:
                 raise Exception("未找到视频片段，请检查M3U8链接是否正确")
+            if self._stop_flag.is_set():
+                raise InterruptedError("下载已取消")
             
             # 检查加密信息
             encryption = playlist_info.get('encryption')
             if encryption:
-                print(f"[DEBUG] 检测到加密: {encryption}")
-                if progress_callback:
-                    progress_callback({'status': 'parsing', 'message': f'检测到{encryption["method"]}加密，正在准备解密...'})
+                method = str(encryption.get('method') or '').upper()
+                if method == 'AES-128':
+                    key_uri = encryption.get('uri')
+                    if not key_uri:
+                        raise Exception("AES-128 加密信息缺少 Key 地址")
+                    print("[INFO] 已自动识别到 AES-128 加密的 M3U8")
+                    print("[INFO] 正在自动加载 AES 解密 Key...")
+                    if progress_callback:
+                        progress_callback({
+                            'status': 'parsing',
+                            'message': '已识别 AES-128 加密，正在自动加载 Key...',
+                        })
+                    key = self.decryptor.get_key(key_uri, dict(self.session.headers))
+                    print(
+                        f"[INFO] AES 解密 Key 已自动加载"
+                        f"（{len(key)} 字节），开始自动解密分片"
+                    )
+                    if progress_callback:
+                        progress_callback({
+                            'status': 'parsing',
+                            'message': 'AES 解密 Key 已加载，将自动解密视频分片',
+                        })
+                elif method and method != 'NONE':
+                    print(f"[WARNING] 检测到尚不支持的 HLS 加密方式: {method}")
             
-            # 创建输出目录
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            temp_dir = output_path + '_temp'
-            os.makedirs(temp_dir, exist_ok=True)
-            print(f"[DEBUG] 临时目录: {temp_dir}")
+            # 最终输出只在合并完整成功后出现。
+            output_path, temp_dir, staged_output = self._prepare_workspace(output_path)
             
             # 设置进度回调
             progress = ProgressCallback(progress_callback)
@@ -513,8 +639,7 @@ class M3U8Downloader:
             print(f"[DEBUG] 下载完成，成功下载 {len([f for f in downloaded_files if f])} 个片段")
             
             if self._stop_flag.is_set():
-                print("[DEBUG] 下载被用户停止")
-                return False
+                raise InterruptedError("下载已取消")
             
             # 检查下载结果
             successful_downloads = [f for f in downloaded_files if f]
@@ -529,18 +654,23 @@ class M3U8Downloader:
             if progress_callback:
                 progress_callback({'status': 'merging', 'message': '正在合并视频片段...'})
             
-            self._merge_segments(successful_downloads, output_path)
+            self._merge_segments(successful_downloads, staged_output)
+            if self._stop_flag.is_set():
+                raise InterruptedError("合并已取消")
+            if not os.path.isfile(staged_output) or os.path.getsize(staged_output) == 0:
+                raise Exception("合并产物无效")
+
+            os.replace(staged_output, output_path)
             print(f"[DEBUG] 视频合并完成: {output_path}")
-            
-            # 清理临时文件
-            import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
             
             if progress_callback:
                 progress_callback({'status': 'completed', 'message': '下载完成！'})
             
             return True
             
+        except InterruptedError as exc:
+            print(f"[DEBUG] {exc}")
+            return False
         except Exception as e:
             print(f"[ERROR] 下载失败: {str(e)}")
             import traceback
@@ -548,6 +678,8 @@ class M3U8Downloader:
             if progress_callback:
                 progress_callback({'status': 'error', 'message': f'下载失败: {str(e)}'})
             return False
+        finally:
+            self.cleanup_incomplete_artifacts()
     
     def _download_segments(self, segments: List[Dict], temp_dir: str, encryption: Dict = None, progress: ProgressCallback = None) -> List[str]:
         """多线程下载片段"""
@@ -606,6 +738,8 @@ class M3U8Downloader:
                 # 禁用SSL证书验证以避免证书错误
                 response = self.session.get(url, timeout=30, verify=False)
                 response.raise_for_status()
+                if self._stop_flag.is_set():
+                    return None
                 
                 data = response.content
                 print(f"[DEBUG] 片段 {index} 下载完成，大小: {len(data)} 字节")
@@ -626,7 +760,10 @@ class M3U8Downloader:
                         print(f"[ERROR] 片段 {index} 解密失败: {decrypt_error}")
                         raise decrypt_error
                 
-                # 写入文件
+                if self._stop_flag.is_set():
+                    return None
+
+                # 写入任务专属临时文件
                 with open(file_path, 'wb') as f:
                     f.write(data)
                 
@@ -648,13 +785,16 @@ class M3U8Downloader:
                 # 等待后重试
                 wait_time = min(2 ** attempt, 10)  # 指数退避，最多等10秒
                 print(f"[DEBUG] 等待 {wait_time} 秒后重试...")
-                time.sleep(wait_time)
+                if self._stop_flag.wait(wait_time):
+                    return None
         
         return None
     
     def _merge_segments(self, segment_files: List[str], output_path: str):
         """合并视频片段 - 优先使用FFmpeg，备用简单合并"""
         print(f"[DEBUG] 开始合并 {len(segment_files)} 个片段到 {output_path}")
+        if self._stop_flag.is_set():
+            raise InterruptedError("合并已取消")
 
         # 尝试使用FFmpeg合并
         if self.ffmpeg_merger.available:
@@ -662,8 +802,9 @@ class M3U8Downloader:
             if self.ffmpeg_merger.merge_segments(segment_files, output_path):
                 print("[DEBUG] FFmpeg合并成功")
                 return
-            else:
-                print("[WARNING] FFmpeg合并失败，尝试备用方案...")
+            if self._stop_flag.is_set():
+                raise InterruptedError("合并已取消")
+            print("[WARNING] FFmpeg合并失败，尝试备用方案...")
         else:
             print("[INFO] FFmpeg不可用，使用备用合并方案")
 
@@ -676,6 +817,8 @@ class M3U8Downloader:
 
         with open(output_path, 'wb') as output_file:
             for idx, segment_file in enumerate(sorted(segment_files)):
+                if self._stop_flag.is_set():
+                    raise InterruptedError("合并已取消")
                 if not os.path.exists(segment_file):
                     continue
 
@@ -703,6 +846,7 @@ class M3U8Downloader:
     def stop_download(self):
         """停止下载"""
         self._stop_flag.set()
+        self.ffmpeg_merger.cancel()
 
 
 if __name__ == "__main__":

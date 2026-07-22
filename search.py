@@ -15,7 +15,9 @@ AIGUA_CHANNEL = "爱瓜影视"
 NCAT_CHANNEL = "NCat22影视"
 MOFA_CHANNEL = "魔法影视"
 IYF_CHANNEL = "爱壹帆影视"
-SEARCH_CHANNELS = (AIGUA_CHANNEL, NCAT_CHANNEL, MOFA_CHANNEL, IYF_CHANNEL)
+NNYY_CHANNEL = "努努影院"
+# NCat22 适配器暂时保留，但不暴露在搜索窗口的可选渠道中。
+SEARCH_CHANNELS = (AIGUA_CHANNEL, MOFA_CHANNEL, IYF_CHANNEL, NNYY_CHANNEL)
 
 CHANNEL_INPUT_TYPE = "type"
 CHANNEL_INPUT_COOKIE = "ncat_cookie"
@@ -221,7 +223,7 @@ def get_channel_input_mode(channel):
         return CHANNEL_INPUT_TYPE
     if channel in {NCAT_CHANNEL, IYF_CHANNEL}:
         return CHANNEL_INPUT_COOKIE
-    if channel == MOFA_CHANNEL:
+    if channel in {MOFA_CHANNEL, NNYY_CHANNEL}:
         return CHANNEL_INPUT_NONE
     raise ValueError(f"未知搜索渠道: {channel}")
 
@@ -247,6 +249,10 @@ def create_search_engine(channel, proxy_config=None, ncat_cookie='', iyf_cookie=
         from search_iyf import IYFSearcher
 
         return IYFSearcher(proxy_config=proxy_config, cookie=iyf_cookie)
+    if channel == NNYY_CHANNEL:
+        from search_nnyy import NNYYSearcher
+
+        return NNYYSearcher(proxy_config=proxy_config)
     raise ValueError(f"未知搜索渠道: {channel}")
 
 
@@ -254,6 +260,6 @@ def search_with_engine(channel, engine, keyword, choice=0):
     """屏蔽各搜索引擎的参数差异。"""
     if channel == AIGUA_CHANNEL:
         return engine.search(keyword, choice)
-    if channel in {NCAT_CHANNEL, MOFA_CHANNEL, IYF_CHANNEL}:
+    if channel in {NCAT_CHANNEL, MOFA_CHANNEL, IYF_CHANNEL, NNYY_CHANNEL}:
         return engine.search(keyword, verbose=False)
     raise ValueError(f"未知搜索渠道: {channel}")

@@ -16,6 +16,8 @@ DEFAULT_CONFIG = {
     'window_width': 1200,           # 窗口默认宽度
     'window_height': 900,           # 窗口默认高度
     'theme': 'modern',              # 界面主题
+    'theme_color': 0,               # 默认主题索引：电青（暗色工作台）
+    'enable_effects': True,         # 粒子、轨道、流光等动态视觉特效
 
     # 网络设置
     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -37,40 +39,40 @@ DEFAULT_CONFIG = {
     'log_level': 'INFO',           # 日志级别
 }
 
-# 全局统一圆角（卡片 / 按钮 / 输入框共用）
-RADIUS = 10
+# 全局圆角
+RADIUS = 14
+RADIUS_CONTROL = 10
 
-# 现代极简设计 token（亮色默认；暗色主题由 THEMES 覆盖表面色）
-# 基础色板：bg / surface / primary / text / text_muted
-# 语义色：success / warning / danger
+# 曜石深空 + 熔金强调：底色压得更深、表面分三层，金色带渐变与辉光
 UI_TOKENS = {
-    'primary': '#4F46E5',
-    'primary_hover': '#4338CA',
-    'primary_active': '#3730A3',
-    'primary_soft': '#EEF2FF',
-    'bg': '#FAFAFA',
-    'surface': '#FFFFFF',
-    'surface_alt': '#F5F5F5',
-    'surface_hover': '#F0F0F0',
-    'text': '#111827',
-    'text_muted': '#6B7280',
-    'text_subtle': '#9CA3AF',
-    'border': '#E5E7EB',
-    'border_strong': '#D1D5DB',
-    'border_focus': '#C7D2FE',
-    'success': '#059669',
-    'warning': '#D97706',
-    'danger': '#DC2626',
-    # 统一圆角；旧键名保留为别名，避免散落引用断裂
+    'primary': '#F2C94C',
+    'primary_hover': '#FFDD70',
+    'primary_active': '#D4A72C',
+    'primary_soft': '#2B2410',
+    'bg': '#070B16',
+    'surface': '#0F1528',
+    'surface_alt': '#171F36',
+    'surface_hover': '#212C4A',
+    'text': '#F4F6FB',
+    'text_muted': '#9AA5BF',
+    'text_subtle': '#5F6B88',
+    'border': '#222C47',
+    'border_strong': '#37436A',
+    'border_focus': '#F2C94C',
+    'success': '#3DDC97',
+    'warning': '#F0A030',
+    'danger': '#F07178',
     'radius': RADIUS,
     'radius_card': RADIUS,
-    'radius_control': RADIUS,
-    'radius_tag': RADIUS,
-    'radius_progress': RADIUS,
+    'radius_control': RADIUS_CONTROL,
+    'radius_tag': RADIUS_CONTROL,
+    'radius_progress': 3,
+    'is_dark': True,
 }
 
-# 主界面可选主题。顺序与偏好设置中的下拉框保持一致。
+# 主界面可选主题。顺序与偏好设置中的下拉框保持一致。索引 0 = 默认。
 THEME_NAMES = (
+    '深空金',
     '经典蓝',
     '粉红',
     '翠绿',
@@ -78,7 +80,6 @@ THEME_NAMES = (
     '紫罗兰',
     '绯红',
     '靛紫',
-    '深海',
     '极光',
     '日落',
     '星空',
@@ -127,17 +128,17 @@ def _dark_theme(primary, secondary, accent, bg, surface, text, border):
 
 
 THEMES = {
-    0: _light_theme('#4F46E5', '#4338CA', '#6366F1'),   # 经典蓝 Indigo
-    1: _light_theme('#DB2777', '#BE185D', '#EC4899'),   # 粉红
-    2: _light_theme('#059669', '#047857', '#10B981'),   # 翠绿
-    3: _light_theme('#D97706', '#B45309', '#F59E0B'),   # 琥珀
-    4: _light_theme('#7C3AED', '#6D28D9', '#8B5CF6'),   # 紫罗兰
-    5: _light_theme('#DC2626', '#B91C1C', '#EF4444'),   # 绯红
-    6: _light_theme('#7C3AED', '#6D28D9', '#A78BFA'),   # 靛紫
-    7: _dark_theme(                                    # 深海
-        '#22D3EE', '#06B6D4', '#67E8F9',
-        '#0F172A', '#1E293B', '#E2E8F0', '#334155',
+    0: _dark_theme(                                    # 曜石金（默认）
+        '#F2C94C', '#FFDD70', '#D4A72C',
+        '#070B16', '#0F1528', '#F4F6FB', '#222C47',
     ),
+    1: _light_theme('#4F46E5', '#4338CA', '#6366F1'),   # 经典蓝 Indigo
+    2: _light_theme('#DB2777', '#BE185D', '#EC4899'),   # 粉红
+    3: _light_theme('#059669', '#047857', '#10B981'),   # 翠绿
+    4: _light_theme('#D97706', '#B45309', '#F59E0B'),   # 琥珀
+    5: _light_theme('#7C3AED', '#6D28D9', '#8B5CF6'),   # 紫罗兰
+    6: _light_theme('#DC2626', '#B91C1C', '#EF4444'),   # 绯红
+    7: _light_theme('#6366F1', '#4F46E5', '#A5B4FC'),   # 靛紫
     8: _dark_theme(                                    # 极光
         '#818CF8', '#6366F1', '#A5B4FC',
         '#0F172A', '#1E1B4B', '#E0E7FF', '#312E81',
@@ -199,16 +200,14 @@ def merge_theme_tokens(theme_index, base=None):
     tokens['primary'] = primary
     tokens['primary_hover'] = secondary
     tokens['primary_active'] = accent
-    tokens['border_focus'] = _mix_hex(primary, '#FFFFFF' if is_dark else '#FFFFFF', 0.55)
-    tokens['primary_soft'] = (
-        _mix_hex(primary, '#0F172A', 0.82) if is_dark else _mix_hex(primary, '#FFFFFF', 0.88)
-    )
+    tokens['border_focus'] = _mix_hex(primary, '#FFFFFF', 0.55)
 
     if is_dark:
-        bg = theme.get('bg_start', '#0F172A')
-        surface = theme.get('groupbox_bg', '#1E293B')
-        text = theme.get('text_color', '#E2E8F0')
-        border = theme.get('input_border', '#334155')
+        bg = theme.get('bg_start', '#0E1116')
+        surface = theme.get('groupbox_bg', '#151A21')
+        text = theme.get('text_color', '#F0F3F6')
+        border = theme.get('input_border', '#2A313C')
+        tokens['primary_soft'] = _mix_hex(primary, bg, 0.88)
         tokens.update({
             'bg': bg,
             'surface': surface,
@@ -221,6 +220,7 @@ def merge_theme_tokens(theme_index, base=None):
             'border_strong': _mix_hex(border, '#FFFFFF', 0.12),
         })
     else:
+        tokens['primary_soft'] = _mix_hex(primary, '#FFFFFF', 0.88)
         tokens.update({
             'bg': theme.get('bg_start', tokens['bg']),
             'surface': theme.get('groupbox_bg', tokens['surface']),
@@ -235,9 +235,9 @@ def merge_theme_tokens(theme_index, base=None):
 
     tokens['radius'] = RADIUS
     tokens['radius_card'] = RADIUS
-    tokens['radius_control'] = RADIUS
-    tokens['radius_tag'] = RADIUS
-    tokens['radius_progress'] = RADIUS
+    tokens['radius_control'] = RADIUS_CONTROL
+    tokens['radius_tag'] = RADIUS_CONTROL
+    tokens['radius_progress'] = 3
     tokens['is_dark'] = is_dark
     return tokens
 
